@@ -138,7 +138,10 @@ def tasks() -> list[Scenario]:
                         def do_POST(self):
                             try:
                                 e = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-                                db = sqlite3.connect(DB, timeout=8)
+                                db = sqlite3.connect(DB, timeout=8, isolation_level=None)
+                                # read the schema and write under one lock, so a migration
+                                # committing in between cannot make the insert fail
+                                db.execute("begin immediate")
                                 v = db.execute("select value from meta where key='schema_version'").fetchone()[0]
                                 if v == "1":
                                     db.execute("insert into entries(account, amount, memo) values (?,?,?)",
@@ -148,7 +151,7 @@ def tasks() -> list[Scenario]:
                                     db.execute("insert into entries(account, amount_cents, memo, created) "
                                                "values (?,?,?,current_timestamp)",
                                                (e["account"], int(whole) * 100 + int(frac), e["memo"]))
-                                db.commit(); db.close()
+                                db.execute("commit"); db.close()
                                 self.reply(200, {"ok": True})
                             except Exception as error:
                                 self.reply(500, {"error": repr(error)})
