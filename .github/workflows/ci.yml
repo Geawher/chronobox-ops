@@ -1,0 +1,19 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {path: chronobox-ops}
+      # chronobox-ops depends on a chronobox checkout next to it (see pyproject.toml).
+      - uses: actions/checkout@v4
+        with: {repository: "${{ github.repository_owner }}/chronobox", path: chronobox}
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+        working-directory: chronobox-ops
+      - run: uv run ruff check src tests && uv run ruff format --check src tests
+        working-directory: chronobox-ops
+      # Real-VM tests need /dev/kvm and the chronobox image; they are skipped here.
+      - run: uv run pytest -q
+        working-directory: chronobox-ops
