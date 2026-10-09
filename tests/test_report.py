@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from chronobox_ops.report import html, markdown
-from chronobox_ops.report.results import load
+from chronobox_ops.report.results import export, load
 
 
 def write_run(root: Path, setup: str, seed: int, *, success: bool, damage: dict[str, float]) -> None:
@@ -39,3 +39,15 @@ def test_report_from_runs(tmp_path: Path) -> None:
     assert "MCP only · chronobox" in board and "100%" in board
     page = html.render(results, "test")
     assert page.startswith("<!doctype html>") and "ledger-migrate" in page
+
+
+def test_exported_results_load_back_the_same(tmp_path: Path) -> None:
+    for seed in range(2):
+        write_run(tmp_path / "runs", "alone", seed, success=True, damage={"failed_requests": float(seed)})
+    results = load([tmp_path / "runs"])
+    exported = tmp_path / "results.json"
+    exported.write_text(export(results))
+    again = load([exported])
+    assert [(r["seed"], r["success"], r["reward"]) for r in again] == [
+        (r["seed"], r["success"], r["reward"]) for r in results
+    ]

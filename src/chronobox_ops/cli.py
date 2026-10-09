@@ -19,7 +19,7 @@ from chronobox_ops.harness.machine import GradeMode
 from chronobox_ops.harness.runner import RunOptions, run_grid
 from chronobox_ops.harness.setups import SETUPS
 from chronobox_ops.report import html, markdown
-from chronobox_ops.report.results import load
+from chronobox_ops.report.results import export, load
 from chronobox_ops.tasks import TASKS
 from chronobox_ops.validate import Mode, validate_all
 
@@ -74,7 +74,9 @@ def cmd_report(args: argparse.Namespace) -> None:
         args.html.write_text(html.render(results, args.title))
     if args.markdown:
         args.markdown.write_text(markdown.full_report(results))
-    if not args.html and not args.markdown:
+    if args.json:
+        args.json.write_text(export(results))
+    if not args.html and not args.markdown and not args.json:
         print(markdown.leaderboard(results))
 
 
@@ -116,9 +118,10 @@ def parser() -> argparse.ArgumentParser:
     running.set_defaults(handler=cmd_run)
 
     reporting = commands.add_parser("report", help="leaderboard, Markdown tables and an HTML report")
-    reporting.add_argument("runs", nargs="+", type=Path)
+    reporting.add_argument("runs", nargs="+", type=Path, help="run directories or exported results.json files")
     reporting.add_argument("--html", type=Path)
     reporting.add_argument("--markdown", type=Path)
+    reporting.add_argument("--json", type=Path, help="export the rescored results (reloadable)")
     reporting.add_argument("--title", default="chronobox-ops results")
     reporting.set_defaults(handler=cmd_report)
     return root

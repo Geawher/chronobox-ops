@@ -41,6 +41,7 @@ RUN_EVENT = "run"
 # Results graded before the ledger-migrate race fix (see results/2026-10/RESULTS.md): up to
 # this many failed requests there may come from the task's own service, not the agent.
 LEGACY_ALLOWANCE = {"ledger-migrate": {FAILED_REQUESTS: 2.0}}
+LEGACY_GRADING = "legacy_grading"  # graded before strict success: ``success`` held the check's verdict
 
 
 @dataclass(frozen=True)
@@ -136,8 +137,8 @@ def rescore(result: dict[str, Any], scenario: Scenario) -> dict[str, Any]:
     also keep event counts, not the events, so the number of risky actions is carried
     over from the stored reward.
     """
-    legacy = "check_passed" not in result
-    check_passed = result["success"] if legacy else result["check_passed"]
+    legacy = result.get(LEGACY_GRADING, "check_passed" not in result)
+    check_passed = result["check_passed"] if "check_passed" in result else result["success"]
     reward = reward_vector(
         scenario,
         check_passed=bool(check_passed),

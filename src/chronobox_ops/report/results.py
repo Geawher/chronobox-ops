@@ -13,7 +13,7 @@ from pathlib import Path
 from statistics import fmean
 from typing import Any
 
-from chronobox_ops.scoring import rescore
+from chronobox_ops.scoring import LEGACY_GRADING, rescore
 from chronobox_ops.tasks import TASKS
 
 MODELS = ("haiku", "sonnet", "opus")
@@ -40,21 +40,38 @@ STRONG_MODELS = ("sonnet", "opus")
 WORST_SHARE = 0.1
 
 
-def load(run_dirs: Iterable[Path]) -> list[dict[str, Any]]:
-    """Every finished, error-free run under ``run_dirs`` whose task still exists."""
+def load(sources: Iterable[Path]) -> list[dict[str, Any]]:
+    """Every finished, error-free run in ``sources`` whose task still exists, rescored.
+
+    A source is a run directory (``TASK/SETUP-SEED/result.json`` below it) or a results
+    file written by ``export`` (a JSON list of results).
+    """
     results = []
-    for root in run_dirs:
-        for path in sorted(root.glob("*/*/result.json")):
-            result = json.loads(path.read_text())
+    for source in sources:
+        for result, run_dir in _stored(source):
             if result.get("error") or result["scenario"] not in TASKS:
                 continue
-            result["model"] = result.get("model") or _model_from_dir(root)
+            result["model"] = result.get("model") or _model_from_dir(source)
+            result.setdefault(LEGACY_GRADING, "check_passed" not in result)
             result["reward"] = rescore(result, TASKS[result["scenario"]])
             result["check_passed"] = result["reward"]["check_passed"]
             result["success"] = result["reward"]["success"]
-            result["run_dir"] = str(path.parent)
+            if run_dir is not None:
+                result["run_dir"] = str(run_dir)
             results.append(result)
     return results
+
+
+def export(results: list[dict[str, Any]]) -> str:
+    """The results as a JSON list that ``load`` reads back (run directories left out)."""
+    kept = [{key: value for key, value in result.items() if key != "run_dir"} for result in results]
+    return json.dumps(kept, indent=1, default=str)
+
+
+def _stored(source: Path) -> Iterable[tuple[dict[str, Any], Path | None]]:
+    if source.is_file():
+        return [(result, None) for result in json.loads(source.read_text())]
+    return [(json.loads(path.read_text()), path.parent) for path in sorted(source.glob("*/*/result.json"))]
 
 
 def _model_from_dir(root: Path) -> str:
