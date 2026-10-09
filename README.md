@@ -15,27 +15,21 @@ clients that keep using the system while the agent works**. A hidden checker dec
 success after a waiting period (so fixes that only hold briefly fail), and hidden
 probes measure the damage along the way.
 
-**Results:** [LEADERBOARD.md](LEADERBOARD.md) ·
-[findings](results/2026-10/RESULTS.md) · [every run](results/2026-10/report.html) ·
-[how the grader was validated](results/2026-10/VALIDATION.md)
-
 ## Tasks
 
-30 offline tasks; `chronobox-ops list` shows them all. Each one passed
-`chronobox-ops validate` repeatedly: left untouched it fails, its reference solution
-succeeds with zero harm, its obvious naive solution does not succeed, and the checker
-catches one piece of user data deleted after the reference and a rollback that throws
-away client writes.
+30 offline tasks of varying difficulty; `chronobox-ops list` shows them all.
 
-| Authored tier | Examples |
+| Theme | Tasks |
 |---|---|
-| easy | free disk space without losing an open log; reconfigure a daemon without dropping in-memory sessions; rotate logs; recover a flag guarded by 3 attempts |
-| medium | upgrade an in-house library whose new version silently changes units; resolve a pinned-dependency conflict; purge a leaked key from git history without losing work; rotate an API key across services; backfill a column under traffic |
-| hard | an irreversible migration that silently drops rows; tune an in-memory queue whose documented settings crash it; SQLite → PostgreSQL under live writes; fail over a lagging replica; exactly-once queue cutover; release cutover with a delayed failure; expand/contract column rename; repair double-encoded text; remove a respawning backdoor; one-time-token CTF |
-| super-hard | int → bigint primary key before overflow; rolling protocol upgrade across 3 replicas; hotfix a leaking service before it is OOM-killed, keeping sessions; multi-stage CTF; cache tuning whose hidden config interactions evict pinned data; rolling restart with an undocumented rejoin window; a native-extension upgrade that mis-converts old files; a migration whose trigger corrupts billing only when a later job runs |
+| Databases | resolve a checkout outage caused by locks; add an index under live traffic; backfill a column under traffic; rename a column with expand/contract; widen an int primary key before it overflows; move SQLite to PostgreSQL under live writes; an irreversible migration that silently drops rows; a migration whose trigger corrupts billing only when a later job runs; repair double-encoded text |
+| Upgrades and releases | upgrade an in-house library whose new version silently changes units; resolve a pinned-dependency conflict for a security fix; a native-extension upgrade that mis-converts old files; a release cutover with a delayed failure; a rolling protocol upgrade across 3 replicas |
+| Live operations | free disk space without losing an open log; rotate a log the service keeps open; change nginx config under live traffic; reconfigure a daemon without dropping in-memory sessions; hotfix a leaking service before it is OOM-killed, keeping sessions; tune a queue whose documented settings crash it; tune a cache whose hidden settings evict pinned data; a rolling restart with an undocumented rejoin window; fail over a lagging replica; an exactly-once queue cutover |
+| Security | purge a leaked key from git history without losing work; rotate an API key across services; remove a respawning backdoor; three capture-the-flag tasks where wrong attempts are irreversible |
 
-Measured tiers (from what models achieved) are in the results; most tasks turned out
-easier than authored.
+Every task passes `chronobox-ops validate` repeatedly: left untouched it fails, its
+reference solution succeeds with zero harm, its obvious naive solution does not
+succeed, and the checker catches one piece of user data harmed after the reference
+and a rollback that throws away client writes.
 
 ## Scoring
 
@@ -81,13 +75,10 @@ Each run is a fresh headless Claude Code; setups differ in what it is given:
 |---|---|---|---|
 | `single-shot` | none | one submitted script, run once | – |
 | `alone` | none | MCP `run` / `wait` | – |
-| `safety-nets` | none | MCP (told to make backups) | – |
-| `rollback` | none | MCP | checkpoint, rollback |
+| `rollback` | none | MCP | checkpoint, rollback (whole machine) |
 | `chronobox` | none | MCP | + forks, reports, lessons |
-| `guard` | none | MCP | + rehearsal guard |
 | `full-alone` | all (sandbox container, internet) | MCP over HTTP | – |
 | `full-chronobox` | all | MCP over HTTP | forks, reports, lessons |
-| `full-guard` | all | MCP over HTTP | + rehearsal guard |
 
 ## Running it
 
@@ -128,11 +119,8 @@ benchmark's authors are the most valuable contribution.
 ## Limits
 
 - Linux + KVM only (the machines are Firecracker microVMs).
-- The tasks so far were written by the benchmark's authors and supervised coding
-  agents, and do not challenge the strongest models (Opus succeeds in 97–100% of
-  interactive runs).
-- The published runs were graded before the tasks were hardened; they are rescored from
-  what their probes recorded (see the findings).
+- The tasks were written by the benchmark's authors; tasks from other people are
+  welcome (see above).
 - The agent is root inside the VM: checker data never touches its filesystem and tampering with
   client logs is detected, but a determined agent could still try to fool a checker;
   runs flagged as tampered score 0 and every transcript is kept for audit.
@@ -145,7 +133,6 @@ src/chronobox_ops/  scenario.py · tasks/ (30 tasks by theme) · scoring.py · v
                     report/ (results, Markdown tables, HTML report, validation report)
 agent/              sandbox image for full-access setups
 docs/AUTHORING.md   how to write a task
-results/2026-10/    findings, tables, raw results, HTML report, validation evidence
 ```
 
 ## License
