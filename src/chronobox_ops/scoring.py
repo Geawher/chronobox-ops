@@ -118,6 +118,17 @@ def reward_vector(
     }
 
 
+def report_reward(scenario: Scenario, report: dict[str, Any]) -> dict[str, Any]:
+    """The reward vector of a machine's grading report (``ScenarioMachine.finish``)."""
+    return reward_vector(
+        scenario,
+        check_passed=bool(report["check"].get("success")),
+        damage=report["damage"],
+        tampering=report["tampering"],
+        events=report.get("events", []),
+    )
+
+
 def rescore(result: dict[str, Any], scenario: Scenario) -> dict[str, Any]:
     """Recompute a stored result's reward vector from its check verdict and damage counts.
 

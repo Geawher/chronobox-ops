@@ -27,7 +27,7 @@ from chronobox_ops.harness.machine import FINISH_OP, GradeMode
 from chronobox_ops.harness.scheduler import ActiveRun, MemoryScheduler
 from chronobox_ops.harness.setups import SETUPS, AgentKind, Setup
 from chronobox_ops.scenario import Scenario
-from chronobox_ops.scoring import reward_vector
+from chronobox_ops.scoring import report_reward
 from chronobox_ops.tasks import TASKS
 
 PER_RUN_MIB = 1200
@@ -196,7 +196,7 @@ class Run:
 
 
 def _scored(task: Scenario, report: dict[str, Any]) -> dict[str, Any]:
-    reward = _reward(task, report)
+    reward = report_reward(task, report)
     scored = {
         "grade": report["grade"],
         "check": report["check"],
@@ -212,18 +212,8 @@ def _scored(task: Scenario, report: dict[str, Any]) -> dict[str, Any]:
     }
     other = report.get("other_grade")
     if other is not None:
-        scored["other_grade"] = {**other, "success": _reward(task, other)["success"]}
+        scored["other_grade"] = {**other, "success": report_reward(task, other)["success"]}
     return scored
-
-
-def _reward(task: Scenario, report: dict[str, Any]) -> dict[str, Any]:
-    return reward_vector(
-        task,
-        check_passed=bool(report["check"].get("success")),
-        damage=report["damage"],
-        tampering=report["tampering"],
-        events=report.get("events", []),
-    )
 
 
 async def run_grid(

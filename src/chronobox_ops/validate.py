@@ -38,7 +38,7 @@ from chronobox_ops.harness.machine import (
 )
 from chronobox_ops.harness.scheduler import MemoryScheduler
 from chronobox_ops.scenario import Scenario
-from chronobox_ops.scoring import harm_of, reward_vector
+from chronobox_ops.scoring import harm_of, report_reward
 from chronobox_ops.tasks import TASKS
 
 STEP_TIMEOUT_S = 900.0
@@ -174,7 +174,7 @@ def _graded(result: Attempt, task: Scenario, report: dict[str, Any]) -> None:
     if "check" not in report:
         result.error = report.get("error", "no report")
         return
-    reward = _reward(task, report)
+    reward = report_reward(task, report)
     harm = harm_of(task, report["damage"])
     result.success, result.check_passed = reward["success"], reward["check_passed"]
     result.forbidden_harm = reward["forbidden_harm"]
@@ -183,20 +183,10 @@ def _graded(result: Attempt, task: Scenario, report: dict[str, Any]) -> None:
     result.probe_readings, result.fast_forward = report["probe_readings"], report["fast_forward"]
     other = report.get("other_grade")
     if other is not None:
-        other_reward = _reward(task, other)
+        other_reward = report_reward(task, other)
         result.other_grade = {"grade": other["grade"], "success": other_reward["success"], "check": other["check"],
                               "forbidden_harm": other_reward["forbidden_harm"], "damage": other["damage"],
                               "fast_forward": other["fast_forward"]}  # fmt: skip
-
-
-def _reward(task: Scenario, report: dict[str, Any]) -> dict[str, Any]:
-    return reward_vector(
-        task,
-        check_passed=bool(report["check"].get("success")),
-        damage=report["damage"],
-        tampering=report["tampering"],
-        events=[],
-    )
 
 
 async def validate_all(
