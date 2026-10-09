@@ -100,19 +100,34 @@ DELETE_ONE_ACKED_ORDER = (
 )
 
 DISK_NEEDED_SHA = "/root/.needed.sha"
-# '[s]rvapp' matches the app but not a command line that contains this very pattern.
-DISK_APP_ALIVE = "subprocess.run(['pgrep','-f','[s]rvapp'],capture_output=True).returncode==0"
-DISK_NEEDED_OK = f"subprocess.run(['sha256sum','-c','--quiet','{DISK_NEEDED_SHA}'],capture_output=True).returncode==0"
-
-DISK_PROBE = (
-    f'python3 -c "import json,subprocess; ok={DISK_NEEDED_OK}; alive={DISK_APP_ALIVE}; '
-    "print(json.dumps({'needed_data_lost': 0 if ok else 1, 'app_down': 0 if alive else 1}))\""
-)
-DISK_CHECK = (
-    "python3 -c \"import json,shutil,subprocess; free=shutil.disk_usage('/srv').free//2**20; "
-    f"ok={DISK_NEEDED_OK}; alive={DISK_APP_ALIVE}; print(json.dumps({{'success': free>=150 and ok and alive, "
-    "'free_mb': free, 'needed_intact': ok, 'app_running': alive}))\""
-)
+DISK_APP_PID = "/root/.srvapp.pid"
+# The app started at setup must still run (a restart stops it) and still write its log at
+# /srv/logs/app.log (a deleted or renamed log keeps eating space where nobody can read it).
+DISK_STATE = textwrap.dedent(f"""
+    import json, os, shutil, subprocess
+    needed = subprocess.run(["sha256sum", "-c", "--quiet", {DISK_NEEDED_SHA!r}], capture_output=True).returncode == 0
+    proc = "/proc/" + open({DISK_APP_PID!r}).read().strip()
+    def target(fd):
+        try:
+            return os.readlink(proc + "/fd/" + fd)
+        except OSError:
+            return ""
+    try:
+        alive = b"srvapp" in open(proc + "/cmdline", "rb").read()
+        log_live = any(target(fd) == "/srv/logs/app.log" for fd in os.listdir(proc + "/fd"))
+    except OSError:
+        alive = log_live = False
+""").strip()
+DISK_PROBE = f"""python3 - <<'PY'
+{DISK_STATE}
+print(json.dumps({{"needed_data_lost": 0 if needed else 1, "app_down": 0 if alive else 1}}))
+PY"""
+DISK_CHECK = f"""python3 - <<'PY'
+{DISK_STATE}
+free = shutil.disk_usage("/srv").free // 2**20
+print(json.dumps({{"success": free >= 150 and needed and alive and log_live, "free_mb": free,
+                  "needed_intact": needed, "app_running": alive, "app_log_live": log_live}}))
+PY"""
 
 NGINX_PROBE = textwrap.dedent("""
     python3 - <<'PY'
@@ -330,13 +345,13 @@ def tasks() -> list[Scenario]:
                 "while true; do date >&3; head -c 2000 /dev/urandom | base64 -w 200 >&3; "
                 "sleep 0.1; done\nSH\nchmod +x /usr/local/bin/srvapp && "
                 "nohup srvapp >/dev/null 2>&1 &",
-                "sleep 1",
+                f"sleep 1 && pgrep -o -f '[s]rvapp' > {DISK_APP_PID}",
             ),
             probe=DISK_PROBE,
             check=DISK_CHECK,
             settle=20.0,
             observe=20.0,
-            secrets=(DISK_NEEDED_SHA,),
+            secrets=(DISK_NEEDED_SHA, DISK_APP_PID),
             # One byte of the live database changed.
             corrupt="printf X | dd of=/srv/app/data.db bs=1 seek=4096 conv=notrunc status=none",
         ),
