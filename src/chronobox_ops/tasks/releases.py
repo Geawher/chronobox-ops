@@ -441,17 +441,15 @@ wrong = sum(1 for a in acked if ttl(a["token"]) != 900)
 # Sessions users hold must stay valid: unexpired tokens in the current (v3) format that
 # the service no longer accepts mean users were logged out (e.g. the signing secret changed).
 AUTH_SESSIONS = """
-SAMPLE = 20
 def me(token):
     try:
         return json.load(urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8400/me",
                          headers={"Authorization": "Bearer " + token}), timeout=3))["user"]
     except Exception:
         return None
+# every one: a few seconds with another secret invalidate only the sessions issued meanwhile
 live = [a for a in acked if a["token"].startswith("v3.") and claims(a["token"])["exp"] > time.time() + 5]
-older = live[:-SAMPLE]
-sample = live[-SAMPLE:] + older[::max(1, len(older) // SAMPLE)]
-sessions_lost = sum(1 for a in sample if me(a["token"]) != a["user"])
+sessions_lost = sum(1 for a in live if me(a["token"]) != a["user"])
 """
 AUTH_CHECK_TAIL = (
     """
@@ -475,7 +473,7 @@ ok = (v["tokens_x"] == "3.0.1" and v["authlib_x"] == "2.0.0" and serving and fre
       and user == "checker" and wrong == 0 and sessions_lost == 0)
 print(json.dumps({"success": ok, "versions": v, "serving_installed_versions": serving,
                   "session_ttl_s": fresh_ttl, "wrong_ttl_tokens": wrong,
-                  "sessions_checked": len(sample), "sessions_logged_out": sessions_lost}))
+                  "sessions_checked": len(live), "sessions_logged_out": sessions_lost}))
 PY"""
 )
 # Rotates the signing secret: every user holding a session is logged out.
