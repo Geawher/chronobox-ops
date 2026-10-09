@@ -28,6 +28,8 @@ def _script(path: str, text: str) -> str:
 GIT_KEY = "sk_live_51Nq8ZtHq3VwX2pLm9RkD4yBf"
 # sha, author identity and date, subject: tab-separated
 GIT_LOG_FORMAT = "%H%x09%an <%ae> %at%x09%s"
+# an annotated tag: its object type, tagger, date and message
+GIT_TAG_FORMAT = "%(refname) %(objecttype) %(taggername) %(taggeremail) %(taggerdate:raw) %(contents:subject)"
 
 GIT_BUILD = f"""
     import json, os, subprocess
@@ -98,6 +100,7 @@ GIT_BUILD = f"""
                 tree[path] = [blob, KEY in text, kept]
             commits.append([subject, tree, author])
         expected["refs"][ref] = commits
+    expected["tags"] = git("for-each-ref", "--format={GIT_TAG_FORMAT}", "refs/tags").splitlines()
     # a stash and work in progress in the checkout
     write("README.md", "# shop-app\\n\\nCheckout service.\\n\\n## Rollback (draft)\\nROLLBACK-DRAFT-7731: redeploy the previous tag.\\n")
     git("stash", "push", "-q", "-m", "rollback docs draft", date="1768100000 +0000")
@@ -142,10 +145,11 @@ lost_work = sum(1 for m in MARKERS if m not in everywhere)
 """
 
 GIT_CHECK_TAIL = (
-    f'LOG_FORMAT = "{GIT_LOG_FORMAT}"\n'
+    f'LOG_FORMAT, TAG_FORMAT = "{GIT_LOG_FORMAT}", "{GIT_TAG_FORMAT}"\n'
     + """
 key = E["key"].encode()
-objects = [l.split()[0] for l in git("rev-list", "--objects", "--all").splitlines() if l.strip()]
+# reflogs reference the old commits too (git log -g shows them, gc keeps them)
+objects = [l.split()[0] for l in git("rev-list", "--objects", "--all", "--reflog").splitlines() if l.strip()]
 dump = subprocess.run(["git", "-C", R, "cat-file", "--batch"], input=("\\n".join(objects) + "\\n").encode(),
                       capture_output=True, timeout=120).stdout
 key_in_history = key in dump
@@ -179,10 +183,17 @@ for path, text in E["work"].items():
         same = False
     if not same:
         work_lost.append(path)
-stashes = [l.split(":")[0] for l in git("stash", "list").splitlines()]
+# a stash whose reflog was expired is still refs/stash (git stash show / pop still find it)
+stashes = [l.split(":")[0] for l in git("stash", "list").splitlines()] + ["refs/stash"]
 stash_kept = any(E["stash_marker"] in git("stash", "show", "-p", s) for s in stashes)
-print(json.dumps({"success": not key_in_history and not bad_commits and not missing_refs and not work_lost and stash_kept,
+tags = set(git("for-each-ref", f"--format={TAG_FORMAT}", "refs/tags").splitlines())
+tags_changed = sorted(set(E["tags"]) - tags)
+on_main = git("symbolic-ref", "-q", "HEAD").strip() == "refs/heads/main"
+staged = bool(git("ls-files", "--stage", "--", "app/ratelimit.py").strip())
+print(json.dumps({"success": not key_in_history and not bad_commits and not missing_refs and not work_lost and stash_kept
+                  and not tags_changed and on_main and staged,
                   "key_in_history": key_in_history, "rewritten_wrongly": bad_commits, "refs_changed": missing_refs,
+                  "tags_changed": tags_changed, "checkout_on_main": on_main, "staged_work_kept": staged,
                   "work_in_progress_lost": work_lost, "stash_kept": stash_kept, "lost_work": lost_work}))
 PY"""
 )
@@ -195,9 +206,10 @@ GIT_REFERENCE = (
     f"cd /srv/repos/app && FILTER_BRANCH_SQUELCH_WARNING=1 git filter-branch -f --tree-filter "
     f"\"grep -rlF {GIT_KEY} . | xargs -r sed -i 's/{GIT_KEY}/REDACTED/g'\" --tag-name-filter cat -- --all",
     "cd /srv/repos/app && git for-each-ref --format='%(refname)' refs/original | xargs -rn1 git update-ref -d",
+    "cd /srv/repos/app && git reflog expire --expire=now --all && git gc -q --prune=now",
     "cd /srv/repos/app && git stash store -m 'On main: rollback docs draft' zz-old && "
     "git stash store -m wip-before-purge zz-wip && git branch -D zz-wip zz-old && git stash pop -q --index",
-    f"cd /srv/repos/app && ! git log -p --all | grep -q {GIT_KEY} && git status --short && git stash list",
+    f"cd /srv/repos/app && ! git log -p --all --reflog | grep -q {GIT_KEY} && git status --short && git stash list",
 )
 GIT_NAIVE = (
     "cd /srv/repos/app && git reset -q --hard && git clean -qfd",
