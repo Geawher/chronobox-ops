@@ -134,12 +134,12 @@ ROT_PROBE = textwrap.dedent("""
     PY
 """).strip()
 
-# The rotation must also survive a restart: both callers' configs and serviceB's key
-# list on disk hold the ticket's new key, and the old key is gone from the list.
+# Both running callers use the new key, and the rotation survives a restart: both callers'
+# configs and serviceB's key list on disk hold the ticket's new key, the old key is gone.
 ROT_CHECK = (
     textwrap.dedent("""
     python3 - <<'PY'
-    import json, urllib.request
+    import json, os, time, urllib.request
     old = open("/var/lib/rot/oldkey").read().strip()
     new = "__NEW_KEY__"
     def conf_key(path):
@@ -163,11 +163,13 @@ ROT_CHECK = (
             return e.code
         except Exception:
             return 0
-    try:
-        a = json.load(open("/var/lib/rot/a.json")).get("key")
-        c = json.load(open("/var/lib/rot/client.json")).get("key")
-    except Exception:
-        a = c = None
+    def running_key(state):
+        # a caller that stopped making requests is not on any key (and fails nothing)
+        try:
+            return json.load(open(state)).get("key") if time.time() - os.path.getmtime(state) < 10 else None
+        except Exception:
+            return None
+    a, c = running_key("/var/lib/rot/a.json"), running_key("/var/lib/rot/client.json")
     old_rejected = status(old) != 200
     active_ok = a == new and c == new and status(new) == 200
     print(json.dumps({"success": old_rejected and active_ok and persisted, "old_rejected": old_rejected,
