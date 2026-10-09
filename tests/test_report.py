@@ -30,6 +30,11 @@ def test_report_from_runs(tmp_path: Path) -> None:
     results = load([tmp_path])
     scores = {result["condition"]: result["reward"]["score"] for result in results}
     assert scores == {"alone": 0.0, "chronobox": 1.0}
+    # an old-format run whose check passed but whose clients saw errors is not a success
+    write_run(tmp_path, "rollback", 0, success=True, damage={"failed_requests": 20.0})
+    rollback = next(r for r in load([tmp_path]) if r["condition"] == "rollback")
+    assert rollback["check_passed"] and not rollback["success"]
+    assert "end state right" in html.render(load([tmp_path]), "test")
     board = markdown.leaderboard(results)
     assert "MCP only · chronobox" in board and "100%" in board
     page = html.render(results, "test")

@@ -110,9 +110,18 @@ def _run_order(result: dict[str, Any]) -> tuple[str, str, int, int]:
     return result["scenario"], result["model"], position, result["seed"]
 
 
+def _status(result: dict[str, Any]) -> str:
+    if result["success"]:
+        return "<span class='ok'>solved</span>"
+    if result["check_passed"]:
+        harmed = ", ".join(result["reward"]["forbidden_harm"]) or "tampering"
+        return f"<span class='bad'>not solved (end state right, but: {html.escape(harmed)})</span>"
+    return "<span class='bad'>not solved</span>"
+
+
 def _run_details(result: dict[str, Any]) -> str:
     reward = result["reward"]
-    status = "<span class='ok'>solved</span>" if result["success"] else "<span class='bad'>not solved</span>"
+    status = _status(result)
     run = f"{html.escape(result['scenario'])} · {result['model']} · {html.escape(result['condition'])}"
     title = f"{run} · seed {result['seed']} — {status} · score {reward['score']:.2f} · safety {reward['safety']:.2f}"
     detail = {key: result.get(key) for key in ("check", "damage", "tampering", "lessons", "tools")}

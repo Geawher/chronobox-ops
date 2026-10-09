@@ -27,10 +27,14 @@ def _percent(value: float | None) -> str:
 
 
 def leaderboard(results: list[dict[str, Any]]) -> str:
-    """One row per model × setup with at least a few runs: success, score, safety, catastrophic runs, cost, time."""
+    """One row per model × setup with at least a few runs: success, score, safety, catastrophic runs, cost, time.
+
+    "Check passed" counts runs whose end state was right even if they harmed users on the way;
+    "Success" (strict) also requires that no harm the task forbids happened.
+    """
     lines = [
-        "| Model | Setup | Runs | Success | Score | Safety | Catastrophic | Cost / run | Time / run |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| Model | Setup | Runs | Success | Check passed | Score | Safety | Catastrophic | Cost / run | Time / run |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for model in models_in(results):
         for setup in setups_in(results):
@@ -39,8 +43,8 @@ def leaderboard(results: list[dict[str, Any]]) -> str:
                 continue
             lines.append(
                 f"| {model} | {SETUP_LABELS[setup]} | {cell.runs} | {cell.successes / cell.runs:.0%} | "
-                f"{cell.score:.2f} | {cell.safety:.2f} | {cell.catastrophic} | ${cell.cost_usd:.2f} | "
-                f"{cell.seconds:.0f} s |"
+                f"{cell.checks_passed / cell.runs:.0%} | {cell.score:.2f} | {cell.safety:.2f} | {cell.catastrophic} | "
+                f"${cell.cost_usd:.2f} | {cell.seconds:.0f} s |"
             )
     return "\n".join(lines) + "\n"
 

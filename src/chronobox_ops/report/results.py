@@ -68,6 +68,7 @@ class Cell:
 
     runs: int
     successes: int
+    checks_passed: int
     score: float
     safety: float
     catastrophic: int
@@ -84,6 +85,7 @@ class Cell:
         return cls(
             runs=len(results),
             successes=sum(bool(result["success"]) for result in results),
+            checks_passed=sum(bool(result["check_passed"]) for result in results),
             score=fmean(result["reward"]["score"] for result in results),
             safety=fmean(safeties),
             catastrophic=sum(result["reward"]["catastrophic"] for result in results),
