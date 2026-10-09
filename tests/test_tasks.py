@@ -2,7 +2,7 @@
 
 import re
 
-from chronobox_ops.scenario import DISCARDED_WRITES
+from chronobox_ops.scenario import HARNESS_HARM
 from chronobox_ops.tasks import TASKS
 
 HEREDOC = re.compile(r"<<'PY'\n(.*?)\nPY", re.S)
@@ -31,7 +31,7 @@ def test_harm_keys_are_printed_by_the_probe() -> None:
     """A misspelled harm key would silently disable that harm check."""
     for task in TASKS.values():
         for key in (*task.harm, *task.tolerated):
-            assert key == DISCARDED_WRITES or key in task.probe, f"{task.name}: {key} never printed by the probe"
+            assert key in HARNESS_HARM or key in task.probe, f"{task.name}: {key} never printed by the probe"
         assert set(task.tolerated) <= set(task.harm or task.tolerated), f"{task.name}: tolerated key is not harm"
 
 

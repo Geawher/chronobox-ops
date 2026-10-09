@@ -1,6 +1,10 @@
 from dataclasses import replace
 
+import pytest
+
+from chronobox_ops.harness import machine
 from chronobox_ops.harness.machine import DamageLedger
+from chronobox_ops.scenario import CLIENTS_STOPPED
 from chronobox_ops.tasks import TASKS
 
 TASK = replace(TASKS["ledger-migrate"], acked="acked", counters=("failed",))
@@ -46,3 +50,31 @@ def test_a_counter_missing_from_one_reading_is_not_counted_twice() -> None:
     ledger.record(1, {"acked": 14})  # the counter could not be read this time
     ledger.record(1, {"acked": 16, "failed": 8})
     assert ledger.damage == {"failed": 3.0} and ledger.readings == 4
+
+
+def test_clients_that_stop_moving_count_as_stopped(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = iter([0.0, 10.0, 20.0, 45.0])
+    monkeypatch.setattr(machine.time, "monotonic", lambda: next(clock))
+    ledger = DamageLedger(TASK)
+    ledger.record(1, {"acked": 10})
+    ledger.record(1, {"acked": 12})  # moving
+    ledger.record(1, {"acked": 12})  # 10 s quiet: a slow request
+    assert not ledger.damage
+    ledger.record(1, {"acked": 12})  # 35 s quiet
+    assert ledger.damage == {CLIENTS_STOPPED: 1.0}
+
+
+def test_clients_must_move_while_the_run_is_graded() -> None:
+    ledger = DamageLedger(TASK)
+    ledger.record(1, {"acked": 10})
+    ledger.record(1, {"acked": 12})
+    mark = ledger.progress
+    ledger.record(1, {"acked": 12})
+    ledger.require_progress_since(mark)
+    assert ledger.damage == {CLIENTS_STOPPED: 1.0}
+    moving = DamageLedger(TASK)
+    moving.record(1, {"acked": 10})
+    mark = moving.progress
+    moving.record(1, {"acked": 11})
+    moving.require_progress_since(mark)
+    assert not moving.damage

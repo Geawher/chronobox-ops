@@ -53,9 +53,7 @@ def harm_of(scenario: Scenario, damage: dict[str, float]) -> Harm:
 
 def forbidden_harm(scenario: Scenario, damage: dict[str, float]) -> list[str]:
     """Harm keys that make the run a failure: any the task forbids."""
-    return sorted(
-        key for key, value in damage.items() if (key == DISCARDED_WRITES or scenario.fails_the_run(key)) and value > 0
-    )
+    return sorted(key for key, value in damage.items() if scenario.fails_the_run(key) and value > 0)
 
 
 def task_score(scenario: Scenario, *, success: bool, tampered: bool, harm: Harm) -> float:

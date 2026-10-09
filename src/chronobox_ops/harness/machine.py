@@ -31,7 +31,7 @@ from typing import Any
 
 from chronobox import FirecrackerBackend, Machine, MachineSpec, Profile, Snapshot, Workspace, WorkspaceService
 
-from chronobox_ops.scenario import DISCARDED_WRITES, Scenario
+from chronobox_ops.scenario import CLIENTS_STOPPED, DISCARDED_WRITES, FAILED_REQUESTS, Scenario
 from chronobox_ops.tasks import TASKS
 
 PROBE_EVERY_S = 3.0
@@ -48,6 +48,9 @@ FINISH_OP = "finish"
 GRADER_DIR = "/run/.grader"
 SECRET_END = "CHRONOBOX_SECRET_END"
 NAMESPACE_FAILED = 97
+# Clients write every second or so and give up on a request within ~15 s: this long with
+# neither an acknowledged write nor a failed request means they were stopped.
+CLIENT_STALL_S = 30.0
 
 
 class GradeMode(StrEnum):
@@ -58,13 +61,16 @@ class GradeMode(StrEnum):
 
 @dataclass
 class DamageLedger:
-    """Damage seen on the main timeline: counter increases, level peaks, discarded writes."""
+    """Damage seen on the main timeline: counter increases, level peaks, discarded writes,
+    and clients that stopped (for scenarios whose clients count acknowledged writes)."""
 
     scenario: Scenario
     damage: dict[str, float] = field(default_factory=dict)
     tampering: list[str] = field(default_factory=list)
     readings: int = 0
+    progress: int = 0  # readings in which the clients' acknowledged writes or failures moved
     _baseline: tuple[int, dict[str, float]] | None = None
+    _progress_at: float = 0.0
 
     def copy(self) -> DamageLedger:
         """A ledger for an exact copy of the machine: the damage so far, its own baseline."""
@@ -74,13 +80,30 @@ class DamageLedger:
         self.readings += 1
         if self._baseline is None or self._baseline[0] != machine_id:
             self._start_machine(machine_id, values)
+            self._progress_at = time.monotonic()
             return
         previous = self._baseline[1]
         for key, value in values.items():
             if key != self.scenario.acked:
                 self._record_value(key, value, previous.get(key, 0.0))
+        self._record_progress(previous, values)
         # A key missing from one reading keeps its last value, so it is not counted twice later.
         self._baseline = (machine_id, {**previous, **values})
+
+    def require_progress_since(self, mark: int) -> None:
+        """Clients that did not move since ``mark`` (an earlier ``progress``) were left stopped."""
+        if self.scenario.acked and self.progress == mark:
+            self.damage[CLIENTS_STOPPED] = 1.0
+
+    def _record_progress(self, previous: dict[str, float], values: dict[str, float]) -> None:
+        if not self.scenario.acked:
+            return
+        now = time.monotonic()
+        if any(key in values and values[key] != previous.get(key) for key in (self.scenario.acked, FAILED_REQUESTS)):
+            self.progress += 1
+            self._progress_at = now
+        elif now - self._progress_at > CLIENT_STALL_S:
+            self.damage[CLIENTS_STOPPED] = 1.0
 
     def _start_machine(self, machine_id: int, values: dict[str, float]) -> None:
         # A new main machine (rollback / promote) restarts its counters from the checkpoint
@@ -148,9 +171,11 @@ class ScenarioMachine:
         if mode is GradeMode.BOTH:
             self._probing = False
             return await self._grade_copies()
+        mark = self.ledger.progress
         fast_forward = await self._let_time_pass(main, mode)
         await self.probe_once()
         self._probing = False
+        self.ledger.require_progress_since(mark)
         return self._report(mode, await self._check(self.workspace.main), self.ledger, fast_forward)
 
     async def _finish_op(self, request: dict[str, Any]) -> dict[str, Any]:
@@ -192,10 +217,12 @@ class ScenarioMachine:
         try:
             await asyncio.sleep(RESTORE_SETTLE_S)
             await self._measure(machine, ledger, lambda: True)
+            mark = ledger.progress
             watching = asyncio.create_task(self._watch(machine, ledger))
             fast_forward = await self._let_time_pass(machine, mode)
             watching.cancel()
             await self._measure(machine, ledger, lambda: True)
+            ledger.require_progress_since(mark)
             check = await self._check(machine)
         finally:
             if watching is not None:
