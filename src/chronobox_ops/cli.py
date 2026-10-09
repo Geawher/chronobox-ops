@@ -44,7 +44,15 @@ def cmd_list(args: argparse.Namespace) -> None:
 def cmd_validate(args: argparse.Namespace) -> None:
     names = _names(args.tasks or [ALL], TASKS, "tasks")
     problems = asyncio.run(
-        validate_all(names, jobs=args.jobs, modes=args.modes, repeat=args.repeat, grade=args.grade, log=args.log)
+        validate_all(
+            names,
+            jobs=args.jobs,
+            modes=args.modes,
+            repeat=args.repeat,
+            grade=args.grade,
+            log=args.log,
+            resume=args.resume,
+        )
     )
     failing = sorted(name for name, found in problems.items() if found)
     print(
@@ -95,6 +103,7 @@ def parser() -> argparse.ArgumentParser:
     validation.add_argument("--grade", type=GradeMode, choices=list(GradeMode), default=GradeMode.FAST_FORWARD,
                             help="'both' grades copies of the end state each way and flags disagreements")  # fmt: skip
     validation.add_argument("--log", type=Path, help="append every attempt as a JSON line")
+    validation.add_argument("--resume", action="store_true", help="skip attempts already in --log")
     validation.set_defaults(handler=cmd_validate)
 
     running = commands.add_parser("run", help="run tasks × setups × seeds with Claude Code")

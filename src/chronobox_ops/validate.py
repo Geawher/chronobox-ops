@@ -207,13 +207,23 @@ async def validate_all(
     repeat: int = 1,
     grade: GradeMode = GradeMode.FAST_FORWARD,
     log: Path | None = None,
+    resume: bool = False,
 ) -> dict[str, list[str]]:
-    """Attempt every (task, mode, round); returns each task's problems (empty: valid)."""
+    """Attempt every (task, mode, round); returns each task's problems (empty: valid).
+
+    With ``resume``, attempts already in ``log`` count as done and are not repeated.
+    """
     limit = asyncio.Semaphore(jobs)
     scheduler = MemoryScheduler()
     root = Path(tempfile.mkdtemp(prefix="cbx-validate-"))
+    earlier = _logged(log) if resume and log is not None else []
+    finished = {(a.task, a.mode, a.round) for a in earlier}
     units = [
-        (name, mode, round_) for round_ in range(repeat) for name in names for mode in modes_for(TASKS[name], modes)
+        (name, mode, round_)
+        for round_ in range(repeat)
+        for name in names
+        for mode in modes_for(TASKS[name], modes)
+        if (name, mode, round_) not in finished
     ]
 
     async def one(name: str, mode: Mode, round_: int) -> Attempt:
@@ -229,5 +239,15 @@ async def validate_all(
                 out.write(json.dumps(asdict(done), default=str) + "\n")
         return done
 
-    attempts = await asyncio.gather(*(one(*unit) for unit in units))
+    attempts = [*earlier, *await asyncio.gather(*(one(*unit) for unit in units))]
     return {name: [p for a in attempts if a.task == name for p in a.problems()] for name in names}
+
+
+def _logged(log: Path) -> list[Attempt]:
+    if not log.exists():
+        return []
+    attempts = []
+    for line in log.read_text().splitlines():
+        fields = json.loads(line)
+        attempts.append(Attempt(**{**fields, "mode": Mode(fields["mode"])}))
+    return attempts
