@@ -125,7 +125,7 @@ wheels = [
 [[package]]
 name = "chronobox"
 version = "0.2.0"
-source = { git = "https://github.com/Geawher/chronobox.git?branch=main#bbe9ab62f4c6b0a72e295a84cf6b0b3d94182eee" }
+source = { git = "https://github.com/Geawher/chronobox.git?branch=v0.1#98c2953c4448fcab72b881525f9d97dfedaf4d99" }
 dependencies = [
     { name = "mcp" },
 ]
@@ -146,7 +146,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "chronobox", git = "https://github.com/Geawher/chronobox.git?branch=main" }]
+requires-dist = [{ name = "chronobox", git = "https://github.com/Geawher/chronobox.git?branch=v0.1" }]
 
 [package.metadata.requires-dev]
 dev = [
