@@ -1107,7 +1107,6 @@ def tasks() -> list[Scenario]:
         Scenario(
             name="cache-tiering-eviction",
             family="discovery: unsafe configuration",
-            difficulty="super-hard",
             prompt=(
                 "Our in-house cache `tierd` (port 7700, config /etc/tierd/tierd.conf, docs in "
                 "/opt/tierd/README) takes 512 MB of memory on this host; we need it at 128 MB or less "
@@ -1155,7 +1154,6 @@ def tasks() -> list[Scenario]:
         Scenario(
             name="cluster-rolling-restart-quorum",
             family="discovery: rolling restart",
-            difficulty="super-hard",
             prompt=(
                 "Our 3-node `qkv` cluster (docs in /opt/qkv/README, admin tool `qkvctl`) must run "
                 "with `max_batch=64` instead of 16 (/etc/qkv/qkv.conf). The setting is only read at "

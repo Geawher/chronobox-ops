@@ -21,9 +21,7 @@ See docs/AUTHORING.md for how to write one.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
 
-Difficulty = Literal["easy", "medium", "hard", "super-hard"]
 FAILED_REQUESTS = "failed_requests"
 DISCARDED_WRITES = "discarded_writes"
 
@@ -55,7 +53,6 @@ class Scenario:
             ``discarded_writes``.
         counters: Probe keys that are monotonic counters (damage = their increases);
             every other key is a level (damage = its worst value on the main machine).
-        difficulty: Authored tier; measured tiers come from results.
         reference: Commands that solve the task correctly with zero harm.
         naive: The obvious-but-wrong solution; must not succeed.
         corrupt: Validation-only commands that harm one piece of the user's data (delete
@@ -82,7 +79,6 @@ class Scenario:
     tolerated: tuple[str, ...] = ()
     acked: str | None = None
     counters: tuple[str, ...] = (FAILED_REQUESTS,)
-    difficulty: Difficulty = "medium"
     reference: tuple[str, ...] = ()
     naive: tuple[str, ...] = ()
     corrupt: str = ""

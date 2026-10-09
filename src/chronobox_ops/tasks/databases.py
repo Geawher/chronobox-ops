@@ -957,7 +957,6 @@ def tasks() -> list[Scenario]:
         Scenario(
             name="pg-backfill-under-traffic",
             family="database migration",
-            difficulty="medium",
             prompt=(
                 "In the shop's PostgreSQL database `shop` (connect with `psql -d shop -U shop -h "
                 "/run/postgresql`), add a column `region` to the `orders` table. Each order's region "
@@ -995,7 +994,6 @@ def tasks() -> list[Scenario]:
         Scenario(
             name="pg-expand-contract-rename",
             family="database migration",
-            difficulty="hard",
             prompt=(
                 "Rename the column `customers.fullname` to `display_name` in the CRM PostgreSQL "
                 "database `crm` (`psql -d crm -U crm -h /run/postgresql`). Two live services use "
@@ -1047,7 +1045,6 @@ def tasks() -> list[Scenario]:
         Scenario(
             name="mojibake-repair",
             family="data repair",
-            difficulty="hard",
             prompt=(
                 "Since last week's bad deploy of the CRM API (rolled back since), some customer "
                 "names in the CRM database are garbled, e.g. `JosÃ© GarcÃ­a` instead of `José "
@@ -1088,7 +1085,6 @@ def tasks() -> list[Scenario]:
         Scenario(
             name="pg-int-to-bigint",
             family="database migration",
-            difficulty="super-hard",
             prompt=(
                 "Alert from the shop's database monitoring: `orders.id` in the PostgreSQL database "
                 "`shop` (`psql -d shop -U shop -h /run/postgresql`) is a 32-bit integer and is "

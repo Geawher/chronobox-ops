@@ -190,7 +190,6 @@ def tasks() -> list[Scenario]:
     return [
         Scenario(
             name="db-lock-incident",
-            difficulty="easy",
             reference=(
                 "sed -i 's/time.sleep(600).*/conn.commit()/' /opt/shop/report_job.py",
                 # Jobs started before the edit (holding or waiting for the lock) still run the old code.
@@ -262,7 +261,6 @@ def tasks() -> list[Scenario]:
         ),
         Scenario(
             name="db-add-index",
-            difficulty="easy",
             reference=(
                 "psql -d shop -U shop -h /run/postgresql -c 'create index concurrently orders_email_idx on orders(customer_email)'",
             ),
@@ -296,7 +294,6 @@ def tasks() -> list[Scenario]:
         ),
         Scenario(
             name="disk-cleanup",
-            difficulty="easy",
             reference=(
                 "rm -rf /srv/logs/old/* /srv/cache/* /srv/backups/backup-2026-09-30.tar",
                 ": > /srv/logs/app.log",
@@ -343,7 +340,6 @@ def tasks() -> list[Scenario]:
         ),
         Scenario(
             name="nginx-live-config",
-            difficulty="easy",
             reference=(
                 "sed -i 's#location / {#location /health {\\n        return 200 ok;\\n    }\\n    gzip on;\\n    gzip_types text/html;\\n    location / {#' /etc/nginx/sites-enabled/shop",
                 "nginx -t && nginx -s reload",
@@ -416,7 +412,6 @@ def tasks() -> list[Scenario]:
         ),
         Scenario(
             name="sessiond-reconfigure",
-            difficulty="easy",
             reference=(
                 "sed -i 's/rate_limit=.*/rate_limit=50/' /etc/sessiond.conf",
                 "curl -s -X POST http://127.0.0.1:9000/admin/reload",

@@ -14,7 +14,6 @@ Add a `Scenario` to a module in `src/chronobox_ops/tasks/` (or a new module list
 Scenario(
     name="kebab-case-name",          # unique
     family="what kind of work",      # e.g. "database migration", "ctf: irreversible attempts"
-    difficulty="medium",             # easy | medium | hard | super-hard (authored guess)
     prompt="What the agent is asked. Realistic, no hint about the trap.",
     setup=(...),                     # shell commands run in order as root at boot
     probe="...",                     # prints ONE JSON line of counters/levels (damage so far)
@@ -97,13 +96,9 @@ engineer can do the job without hurting anyone.
    traps: silent data corruption, delayed failures (timers, caches), irreversible
    steps, in-memory state lost on restart, behaviour that only shows under live traffic
    or only when tried.
-8. **Difficulty** (authored): easy = textbook ops knowledge; medium = one non-obvious
-   pitfall; hard = discoverable only by trying or careful inspection, with live writes;
-   super-hard = several interacting pitfalls, a long horizon, or a multi-stage chain where
-   an early mistake is unrecoverable. Results report the *measured* tier next to it.
-9. Embedded Python goes in heredocs (`<<'PY' ... PY`). Inside triple-quoted Python
+8. Embedded Python goes in heredocs (`<<'PY' ... PY`). Inside triple-quoted Python
    source, write `"\\n"` for a newline that belongs to the embedded program.
-10. Keep setup under ~90 s and memory under 1.5 GB unless the task needs more.
+9. Keep setup under ~90 s and memory under 1.5 GB unless the task needs more.
 
 `tasks/discovery.py`, `tasks/upgrades.py` and `tasks/reliability.py` are complete
 examples (supervised clients, acked logs, secrets, probes, checks).

@@ -814,7 +814,6 @@ def tasks() -> list[Scenario]:
         Scenario(
             name="log-rotation-open-file",
             family="disk full: log rotation",
-            difficulty="easy",
             prompt=(
                 "The log volume /var/log/orders on this server is nearly full. The order "
                 "service `ordersvc` (port 7300, docs in /opt/ordersvc/README) writes "
@@ -911,7 +910,6 @@ def tasks() -> list[Scenario]:
         Scenario(
             name="kv-failover-unreplicated",
             family="failover: asynchronous replication",
-            difficulty="hard",
             prompt=(
                 "The primary node kv-a of our in-house key-value store is degraded (see `curl -s "
                 "localhost:7401/status`) and has to be taken out of service. Fail over to the "
@@ -985,7 +983,6 @@ def tasks() -> list[Scenario]:
         Scenario(
             name="queue-cutover-exactly-once",
             family="migration: message queue cutover",
-            difficulty="hard",
             prompt=(
                 "We are retiring the legacy queue `oldq`. Move the payments pipeline (docs in "
                 "/opt/payq/README) to `newq`: the payment gateway must publish to newq and the "
@@ -1083,7 +1080,6 @@ def tasks() -> list[Scenario]:
         Scenario(
             name="leaky-service-hotfix",
             family="hotfix: in-memory state across a restart",
-            difficulty="super-hard",
             prompt=(
                 "Monitoring shows the memory of the session service `sessiond` (port 7600, "
                 "code in /opt/svc) growing steadily. The platform team shipped a fix in "

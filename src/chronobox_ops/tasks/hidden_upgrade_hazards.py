@@ -820,7 +820,6 @@ def tasks() -> list[Scenario]:
         Scenario(
             name="native-ext-upgrade",
             family="discovery: dependency upgrade with on-disk format change",
-            difficulty="super-hard",
             prompt=(
                 "The feature service `idxsvc` (port 8500, code in /opt/idxsvc, virtualenv "
                 "/opt/idxsvc/.venv, notes in /opt/idxsvc/README, index files in /srv/idx) runs on "
@@ -880,7 +879,6 @@ def tasks() -> list[Scenario]:
         Scenario(
             name="schema-migration-delayed-trigger",
             family="discovery: migration with delayed effect",
-            difficulty="super-hard",
             prompt=(
                 "Release 4.2 of the billing system is deployed, but its database migrations are "
                 "still pending. Apply them to the PostgreSQL database `billing` (`psql -d billing "

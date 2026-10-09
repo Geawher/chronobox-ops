@@ -39,7 +39,7 @@ def _names(requested: list[str], known: dict[str, object], kind: str) -> list[st
 
 def cmd_list(args: argparse.Namespace) -> None:
     for task in TASKS.values():
-        print(f"{task.difficulty:10} {task.name:34} {task.family}")
+        print(f"{task.name:34} {task.family}")
 
 
 def cmd_validate(args: argparse.Namespace) -> None:

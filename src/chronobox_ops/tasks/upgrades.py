@@ -367,7 +367,6 @@ def tasks() -> list[Scenario]:
     return [
         Scenario(
             name="lib-upgrade",
-            difficulty="medium",
             evidence=("/var/lib/shop-client/acked.log",),
             reference=(
                 "cd /opt/shop && uv pip install -q --offline --python .venv/bin/python --find-links /opt/wheelhouse pricing==2.1.0 && python3 -c \"p='/opt/shop/app.py'; s=open(p).read().replace('from pricing.tax import', 'from pricing.taxes import').replace(', VAT)), 2)', ', VAT).euros), 2)'); open(p,'w').write(s)\" && .venv/bin/python -m pytest -q tests && pkill -f 'shop/.venv/bin/python app.py'",
@@ -427,7 +426,6 @@ def tasks() -> list[Scenario]:
         ),
         Scenario(
             name="db-engine-migration",
-            difficulty="hard",
             secrets=("/opt/notes/.seed.py",),
             evidence=("/var/lib/notes-client/acked.log",),
             reference=(

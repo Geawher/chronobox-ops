@@ -995,7 +995,6 @@ def tasks() -> list[Scenario]:
         Scenario(
             name="git-secret-purge",
             family="repository: history rewrite",
-            difficulty="medium",
             prompt=(
                 "The payment provider's API key (it starts with `sk_live_`) was committed to "
                 "the git repository in /srv/repos/app. It has been rotated, but it must not stay "
@@ -1025,7 +1024,6 @@ def tasks() -> list[Scenario]:
         Scenario(
             name="pinned-deps-conflict",
             family="dependency upgrade: transitive conflict",
-            difficulty="medium",
             prompt=(
                 "Security advisory (see /opt/authsvc/SECURITY.md): the auth service in "
                 "/opt/authsvc (port 8400, virtualenv /opt/authsvc/.venv, tests in "
@@ -1098,7 +1096,6 @@ def tasks() -> list[Scenario]:
         Scenario(
             name="release-cutover",
             family="release: cutover with state migration",
-            difficulty="hard",
             prompt=(
                 "Release 2.0.0 of the inventory service is staged in /opt/app/releases/v2 (release "
                 "notes inside); production runs 1.8.2 from /opt/app/current (port 8500, ops notes "
@@ -1177,7 +1174,6 @@ def tasks() -> list[Scenario]:
         Scenario(
             name="rolling-protocol-upgrade",
             family="release: rolling upgrade of a replicated service",
-            difficulty="super-hard",
             prompt=(
                 "Our replicated key-value store runs as three kvnode instances (ports 7301-7303) "
                 "behind a load balancer on port 7300; ops notes in /opt/kv/README. Upgrade all "

@@ -17,7 +17,6 @@ from chronobox_ops.scoring import LEGACY_GRADING, rescore
 from chronobox_ops.tasks import TASKS
 
 MODELS = ("haiku", "sonnet", "opus")
-TIERS = ("easy", "medium", "hard", "super-hard")
 SETUP_ORDER = (
     "single-shot", "alone", "safety-nets", "rollback", "chronobox", "guard", "team", "team-hint",
     "full-alone", "full-chronobox", "full-guard",
@@ -132,24 +131,6 @@ def setups_in(results: list[dict[str, Any]]) -> list[str]:
 def models_in(results: list[dict[str, Any]]) -> list[str]:
     present = {result["model"] for result in results}
     return [model for model in MODELS if model in present]
-
-
-def interactive_success(results: list[dict[str, Any]], task: str, model: str) -> float | None:
-    runs = [result for result in select(results, model=model, tasks=[task]) if result["condition"] in INTERACTIVE]
-    return fmean(bool(result["success"]) for result in runs) if runs else None
-
-
-def measured_tier(haiku: float | None, strong: float | None) -> str:
-    """Difficulty from what models achieved interactively (strong = mean of Sonnet and Opus)."""
-    if strong is not None and strong < 0.8:
-        return "super-hard"
-    if haiku is None:
-        return "unknown"
-    if haiku < 0.4:
-        return "hard"
-    if haiku < 0.9:
-        return "medium"
-    return "easy"
 
 
 def hardest_tasks(results: list[dict[str, Any]]) -> list[str]:
