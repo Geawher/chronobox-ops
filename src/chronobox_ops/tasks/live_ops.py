@@ -138,9 +138,10 @@ NGINX_PROBE = textwrap.dedent("""
         print("{}")
     PY
 """).strip()
+# The live client must still be running: a stopped client hides interrupted traffic.
 NGINX_CHECK = textwrap.dedent("""
     python3 - <<'PY'
-    import gzip, json, urllib.request
+    import gzip, json, os, time, urllib.request
     BODY = ("<html><body>" + "<p>shop item</p>" * 300 + "</body></html>").encode()
     def get(path, **headers):
         request = urllib.request.Request("http://127.0.0.1:8080" + path, headers=headers)
@@ -153,8 +154,9 @@ NGINX_CHECK = textwrap.dedent("""
         _, _, plain = get("/")
         status, _, health = get("/health")
         healthy = status == 200 and health.strip() == b"ok"
-        out = {"success": gzipped and plain == BODY and healthy, "gzip": gzipped,
-               "app_page_intact": plain == BODY, "health": healthy}
+        client = time.time() - os.path.getmtime("/var/lib/web.json") < 10
+        out = {"success": gzipped and plain == BODY and healthy and client, "gzip": gzipped,
+               "app_page_intact": plain == BODY, "health": healthy, "traffic_running": client}
     except Exception as e:
         out["error"] = str(e)[:200]
     print(json.dumps(out))
