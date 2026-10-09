@@ -39,7 +39,7 @@ async def test_single_shot_gets_no_tools_and_no_mcp(tmp_path: Path) -> None:
 
 
 async def test_mcp_only_agent_gets_only_chronobox_tools_for_its_setup(tmp_path: Path) -> None:
-    launch = await prepare(SETUPS["guard"], "task", tmp_path / "m.sock", tmp_path, OPTIONS)
+    launch = await prepare(SETUPS["chronobox"], "task", tmp_path / "m.sock", tmp_path, OPTIONS)
     assert launch.command[launch.command.index("--allowedTools") + 1] == "mcp__chronobox"
     config = json.loads((tmp_path / "mcp.json").read_text())["mcpServers"]["chronobox"]
-    assert "--guard" in config["args"] and "chronobox" in config["args"]
+    assert config["args"][-2:] == ["--profile", "chronobox"]

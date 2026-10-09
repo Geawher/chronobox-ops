@@ -64,8 +64,8 @@ def safety(results: list[dict[str, Any]], tasks: list[str] | None = None) -> str
 
 def tool_use(results: list[dict[str, Any]]) -> str:
     lines = [
-        "| Model · setup | Commands | Risky on main | Forks | Rollbacks | Promotes | Guard refusals |",
-        "|---|---|---|---|---|---|---|",
+        "| Model · setup | Commands | Risky on main | Forks | Rollbacks | Promotes |",
+        "|---|---|---|---|---|---|",
     ]
     for model in models_in(results):
         for setup in setups_in(results):
@@ -77,9 +77,8 @@ def tool_use(results: list[dict[str, Any]]) -> str:
                 return fmean(r.get("tools", {}).get(tool, 0) for r in runs)
 
             risky = fmean(r["reward"]["risky_actions_on_main"] for r in runs)
-            refused = fmean((r.get("events") or {}).get("guard_refused", 0) for r in runs)
             lines.append(f"| {model} · {setup} | {per_run('run'):.1f} | {risky:.1f} | {per_run('fork'):.1f} | "
-                         f"{per_run('rollback'):.1f} | {per_run('promote'):.1f} | {refused:.1f} |")  # fmt: skip
+                         f"{per_run('rollback'):.1f} | {per_run('promote'):.1f} |")  # fmt: skip
     return "\n".join(lines) + "\n"
 
 

@@ -124,8 +124,7 @@ async def _prepare_full(
 
 
 def _front_end_args(setup: Setup, machine_socket: Path) -> list[str]:
-    args = ["-m", "chronobox.server", "--connect", str(machine_socket), "--profile", setup.profile.value]
-    return [*args, "--guard"] if setup.guard else args
+    return ["-m", "chronobox.server", "--connect", str(machine_socket), "--profile", setup.profile.value]
 
 
 def _free_port(host: str) -> int:

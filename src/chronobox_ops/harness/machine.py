@@ -299,15 +299,15 @@ def last_json_line(output: str) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def scenario_workspace(scenario: Scenario, profile: Profile, *, guard: bool, root: Path | None) -> Workspace:
+def scenario_workspace(scenario: Scenario, profile: Profile, *, root: Path | None) -> Workspace:
     spec = MachineSpec(
         setup=scenario.setup, mem_mib=scenario.mem_mib, data_mib=scenario.data_mib, command_timeout=COMMAND_TIMEOUT_S
     )
-    return Workspace(FirecrackerBackend(root), spec, profile=profile, guard=guard)
+    return Workspace(FirecrackerBackend(root), spec, profile=profile)
 
 
 async def serve(args: argparse.Namespace) -> None:
-    workspace = scenario_workspace(TASKS[args.scenario], args.profile, guard=args.guard, root=args.root)
+    workspace = scenario_workspace(TASKS[args.scenario], args.profile, root=args.root)
     machine = ScenarioMachine(TASKS[args.scenario], workspace)
     background = [asyncio.create_task(machine.boot()), asyncio.create_task(machine.probe_loop())]
     try:
@@ -324,7 +324,6 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Serve one task's machine for a benchmark run.")
     parser.add_argument("--scenario", choices=sorted(TASKS), required=True)
     parser.add_argument("--profile", type=Profile, choices=list(Profile), default=Profile.CHRONOBOX)
-    parser.add_argument("--guard", action="store_true")
     parser.add_argument("--socket", type=Path, required=True)
     parser.add_argument("--root", type=Path)
     asyncio.run(serve(parser.parse_args()))

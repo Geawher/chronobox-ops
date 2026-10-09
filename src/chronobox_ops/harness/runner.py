@@ -126,11 +126,10 @@ class Run:
             await self._stop_machine(machine)
 
     async def _start_machine(self) -> asyncio.subprocess.Process:
-        guard = ["--guard"] if self.setup.guard else []
         with open(self.run_dir / "machine.log", "wb") as log:
             machine = await asyncio.create_subprocess_exec(
                 sys.executable, "-m", "chronobox_ops.harness.machine", "--scenario", self.task.name,
-                "--profile", self.setup.profile.value, *guard, "--socket", str(self.machine_socket),
+                "--profile", self.setup.profile.value, "--socket", str(self.machine_socket),
                 "--root", str(self.scratch / "vms"), stdout=log, stderr=log,
             )  # fmt: skip
         self.active.processes.append(machine)

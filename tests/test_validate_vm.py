@@ -26,7 +26,7 @@ async def test_sessiond_reconfigure_is_valid() -> None:
 async def test_checker_secrets_are_invisible_to_the_agent_while_a_check_runs(tmp_path: Path) -> None:
     task = TASKS["ctf-vault"]
     secret = task.secrets[0]
-    workspace = scenario_workspace(task, Profile.ALONE, guard=False, root=tmp_path)
+    workspace = scenario_workspace(task, Profile.ALONE, root=tmp_path)
     machine = ScenarioMachine(task, workspace)
     try:
         await machine.boot()

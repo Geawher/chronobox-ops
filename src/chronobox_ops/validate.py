@@ -120,7 +120,7 @@ async def attempt(
     """Boot the task, apply ``mode`` on the main machine, grade like an agent's run."""
     result = Attempt(task.name, mode, round_, grade=grade.value)
     profile = Profile.ROLLBACK if mode is Mode.ROLLBACK else Profile.ALONE
-    workspace = scenario_workspace(task, profile, guard=False, root=root)
+    workspace = scenario_workspace(task, profile, root=root)
     machine = ScenarioMachine(task, workspace)
     started = time.monotonic()
     lock: int | None = await scheduler.admit(task.mem_mib * (3 if grade is GradeMode.BOTH else 1) + BOOT_EXTRA_MIB)

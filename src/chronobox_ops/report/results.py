@@ -17,22 +17,14 @@ from chronobox_ops.scoring import LEGACY_GRADING, rescore
 from chronobox_ops.tasks import TASKS
 
 MODELS = ("haiku", "sonnet", "opus")
-SETUP_ORDER = (
-    "single-shot", "alone", "safety-nets", "rollback", "chronobox", "guard", "team", "team-hint",
-    "full-alone", "full-chronobox", "full-guard",
-)  # fmt: skip
+SETUP_ORDER = ("single-shot", "alone", "rollback", "chronobox", "full-alone", "full-chronobox")
 SETUP_LABELS = {
     "single-shot": "Single shot (no tools: one script, run once)",
     "alone": "MCP only · alone",
-    "safety-nets": "MCP only · alone, told to back up",
-    "rollback": "MCP only · rollback (AgentRewind-style)",
+    "rollback": "MCP only · whole-machine rollback",
     "chronobox": "MCP only · chronobox",
-    "guard": "MCP only · chronobox + guard",
-    "team": "MCP only · chronobox + scouts",
-    "team-hint": "MCP only · chronobox + scouts, with a hint",
     "full-alone": "Full Claude Code · alone",
     "full-chronobox": "Full Claude Code · chronobox",
-    "full-guard": "Full Claude Code · chronobox + guard",
 }
 INTERACTIVE = frozenset(SETUP_ORDER) - {"single-shot"}
 STRONG_MODELS = ("sonnet", "opus")
