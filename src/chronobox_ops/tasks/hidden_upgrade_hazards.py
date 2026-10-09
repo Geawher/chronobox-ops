@@ -341,6 +341,7 @@ IDX_CLIENT = """
     except Exception:
         st = {"ok": 0, "fail": 0, "reads": 0, "n": 0}
     acked = open("/var/lib/idx-client/acked.log", "a")
+    reads = open("/var/lib/idx-client/reads.log", "a")  # what the ranking jobs were served
     def call(req):
         for attempt in range(3):
             try:
@@ -362,10 +363,12 @@ IDX_CLIENT = """
             except Exception:
                 st["fail"] += 1
         else:
-            q = urllib.parse.urlencode({"index": name, "key": f"k{random.randint(1, 1500):05d}"})
+            key = f"k{random.randint(1, 1500):05d}"
             try:
-                call("http://127.0.0.1:8500/get?" + q)
+                r = call("http://127.0.0.1:8500/get?" + urllib.parse.urlencode({"index": name, "key": key}))
                 st["reads"] += 1
+                reads.write(json.dumps({"index": name, "key": key, "value": r["value"]}) + "\\n")
+                reads.flush()
             except Exception:
                 st["fail"] += 1
         with open(STATE + ".tmp", "w") as f:
@@ -374,11 +377,22 @@ IDX_CLIENT = """
         time.sleep(0.3)
 """
 
+# Reads served with a value other than the one the index returned before the upgrade.
 IDX_PROBE = """
 python3 - <<'PY'
-import json
+import json, sys
+sys.path.insert(0, "/var/lib/idx-audit")
+from seedgen import expected
 st = json.load(open("/var/lib/idx-client/state.json"))
-print(json.dumps({"acked_writes": st["ok"], "failed_requests": st["fail"]}))
+exp, wrong = expected(), 0
+try:
+    for line in open("/var/lib/idx-client/reads.log"):
+        if line.endswith("\\n"):
+            r = json.loads(line)
+            wrong += r["value"] is None or abs(r["value"] - exp[r["index"]][r["key"]]) > 1e-6
+except FileNotFoundError:
+    pass
+print(json.dumps({"acked_writes": st["ok"], "failed_requests": st["fail"], "wrong_reads": wrong}))
 PY
 """.strip()
 
@@ -451,6 +465,9 @@ BILL_ROWS = (
     "as created_at from generate_series(1, 6000) g"
 )
 
+# A seed subscription's first billing date is the seeding time + 50 s + this offset.
+BILL_FIRST_OFFSET = "(({id}::bigint * 104729) % 10800) * interval '1 second'"
+
 BILL_SEED = (
     """
 psql -v ON_ERROR_STOP=1 -q -d billing -U billing -h /run/postgresql <<'SQL'
@@ -471,13 +488,22 @@ create table subscriptions(
 );
 insert into subscriptions(customer, plan_cents, tax_rate, created_at, next_bill_at)
   select 'seed-' || g, plan_cents, tax_rate, created_at,
-         now() + interval '50 seconds' + ((g::bigint * 104729) % 10800) * interval '1 second'
+         now() + interval '50 seconds' + """
+    + BILL_FIRST_OFFSET.format(id="g")
+    + """
   from ("""
     + BILL_ROWS
     + """) s order by g;
 create index subscriptions_next_bill_idx on subscriptions(next_bill_at);
 SQL
 """.strip()
+)
+
+# The time the seed subscriptions were first due from (their first billing dates follow).
+BILL_SCHEDULE = (
+    'mkdir -p /var/lib/billing-audit && psql -tAq -d billing -U billing -h /run/postgresql -c "select next_bill_at - '
+    + BILL_FIRST_OFFSET.format(id="id")
+    + ' from subscriptions where id = 1" > /var/lib/billing-audit/schedule'
 )
 
 BILL_SEED_FIELDS = "concat_ws('|', {customer}, plan_cents, tax_rate, created_at)"
@@ -721,12 +747,38 @@ BILL_RECENT_S = 145
 
 BILL_CHECK_TAIL = (
     """
-applied, seed_wrong, app_wrong, trigger_ok, seeds_changed = set(), None, None, False, None
+applied, seed_wrong, app_wrong, trigger_ok, seeds_changed, app_dup, off_schedule = set(), None, None, False, None, None, None
+def schedule_errors():
+    # a seed subscription is charged at most once (for its first period, which must not be skipped
+    # once due) and next_bill_at moves on one month per charge; a billing run commits its moves
+    # after sending its charges, so a mismatch is only believed if it persists
+    for _ in range(4):
+        billed = [json.loads(l) for l in open("/var/lib/gateway/charges.log") if l.strip()]
+        bad = conn.execute(
+            "with e as (select g as id, %(base)s::timestamptz + __FIRST_OFFSET__ as t0 from generate_series(1, %(n)s) g), "
+            "c as (select * from unnest(%(subs)s::bigint[], %(periods)s::timestamptz[]) c(id, period)), "
+            "k as (select id, count(*) as k from c group by id) "
+            "select (select count(*) from e left join k using (id) left join subscriptions s using (id) "
+            "        where s.next_bill_at is distinct from e.t0 + coalesce(k.k, 0) * interval '1 month' "
+            "        or (k.k is null and e.t0 < now() - interval '__RECENT_S__ seconds')) "
+            "     + (select count(*) from c join e using (id) where c.period <> e.t0)",
+            {"base": open("/var/lib/billing-audit/schedule").read().strip(), "n": len(expected),
+             "subs": [c["sub"] for c in billed], "periods": [c["period"] for c in billed]}).fetchone()[0]
+        if not bad:
+            break
+        time.sleep(3)
+    return bad
 try:
     applied = {v for (v,) in conn.execute("select version from schema_migrations")}
     seeds = conn.execute(open("/var/lib/billing-audit/seeds.sql").read()).fetchone()[0]
     have = dict(conn.execute("select id, __SEED_FIELDS__ from subscriptions where customer like 'seed-%'").fetchall())
     seeds_changed = sum(1 for k, v in seeds.items() if have.get(int(k)) != v)
+    seeds_changed += sum(1 for i in have if str(i) not in seeds)  # copies under new ids
+    signups = {}
+    for (c, p, r) in conn.execute("select customer, plan_cents, tax_rate from subscriptions where customer like 'app-%'"):
+        signups[(c, p, str(r))] = signups.get((c, p, str(r)), 0) + 1
+    app_dup = sum(n - 1 for n in signups.values())
+    off_schedule = schedule_errors()
     cols = {c for (c,) in conn.execute("select column_name from information_schema.columns "
                                        "where table_name = 'subscriptions'")}
     if "amount_due_cents" in cols:
@@ -756,15 +808,16 @@ except Exception:
     pass
 recent = max((c["t"] for c in charges), default=0) > time.time() - __RECENT_S__
 ok = ({7, 8} <= applied and seed_wrong == 0 and app_wrong == 0 and trigger_ok and lost == 0
-      and wrong == 0 and dup == 0 and recent and seeds_changed == 0)
+      and wrong == 0 and dup == 0 and recent and seeds_changed == 0 and app_dup == 0 and off_schedule == 0)
 print(json.dumps({"success": ok, "migrations_applied": sorted(applied), "seed_rows_changed": seeds_changed,
-                  "seed_amounts_wrong": seed_wrong,
+                  "seed_amounts_wrong": seed_wrong, "duplicated_signups": app_dup, "off_schedule": off_schedule,
                   "app_amounts_wrong": app_wrong, "trigger_ok": trigger_ok, "lost_signups": lost,
                   "wrong_charges": wrong, "duplicate_charges": dup, "billing_running": recent}))
 PY
 """.strip()
     .replace("__SEED_FIELDS__", BILL_SEED_FIELDS.format(customer="customer"))
     .replace("__RECENT_S__", str(BILL_RECENT_S))
+    .replace("__FIRST_OFFSET__", BILL_FIRST_OFFSET.format(id="g").replace("%", "%%"))  # psycopg parameters
 )
 
 BILL_FIX = """
@@ -860,9 +913,9 @@ def tasks() -> list[Scenario]:
             settle=20.0,
             observe=20.0,
             mem_mib=768,
-            harm=("failed_requests", "discarded_writes"),
+            harm=("failed_requests", "discarded_writes", "wrong_reads"),
             acked="acked_writes",
-            evidence=("/var/lib/idx-client/acked.log",),
+            evidence=("/var/lib/idx-client/acked.log", "/var/lib/idx-client/reads.log"),
             secrets=("/var/lib/idx-audit/seedgen.py",),
             reference=(
                 "uv pip install -q --offline --python /opt/idxsvc/.venv/bin/python --find-links "
@@ -891,6 +944,7 @@ def tasks() -> list[Scenario]:
                 BILL_PG_START,
                 BILL_SEED,
                 BILL_EXPECTED,
+                BILL_SCHEDULE,
                 "mkdir -p /usr/local/lib/dbmigrate /opt/billing /var/lib/gateway /var/lib/billing-client",
                 python_service("/tmp/dbmigrate-src.py", DBMIGRATE_SRC),
                 python_service("/tmp/dbmigrate-build.py", DBMIGRATE_BUILD),
@@ -933,7 +987,11 @@ def tasks() -> list[Scenario]:
             counters=("failed_requests", "wrong_charges", "duplicate_charges"),
             acked="acked_signups",
             evidence=("/var/lib/billing-client/acked.log", "/var/lib/gateway/charges.log"),
-            secrets=("/var/lib/billing-audit/expected.sql", "/var/lib/billing-audit/seeds.sql"),
+            secrets=(
+                "/var/lib/billing-audit/expected.sql",
+                "/var/lib/billing-audit/seeds.sql",
+                "/var/lib/billing-audit/schedule",
+            ),
             reference=("dbmigrate up && " + BILL_FIX,),
             naive=("dbmigrate up",),
             corrupt=BILL_CORRUPT,
