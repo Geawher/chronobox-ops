@@ -27,3 +27,13 @@ def test_a_counter_going_down_on_the_same_machine_is_tampering() -> None:
     ledger.record(1, {"failed": 5})
     ledger.record(1, {"failed": 1})
     assert ledger.tampering
+
+
+def test_a_copy_keeps_the_damage_so_far_and_starts_its_own_baseline() -> None:
+    ledger = DamageLedger(TASK)
+    ledger.record(1, {"acked": 100, "failed": 0})
+    ledger.record(1, {"acked": 150, "failed": 4})
+    copy = ledger.copy()
+    copy.record(7, {"acked": 150, "failed": 4})  # the copy's first reading is its baseline
+    copy.record(7, {"acked": 170, "failed": 6})
+    assert copy.damage == {"failed": 6.0} and ledger.damage == {"failed": 4.0}

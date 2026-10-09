@@ -50,6 +50,8 @@ def load(run_dirs: Iterable[Path]) -> list[dict[str, Any]]:
                 continue
             result["model"] = result.get("model") or _model_from_dir(root)
             result["reward"] = rescore(result, TASKS[result["scenario"]])
+            result["check_passed"] = result["reward"]["check_passed"]
+            result["success"] = result["reward"]["success"]
             result["run_dir"] = str(path.parent)
             results.append(result)
     return results

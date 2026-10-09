@@ -1,7 +1,7 @@
 """``chronobox-ops``: list, validate and run the tasks, and report results.
 
 chronobox-ops list
-chronobox-ops validate [TASK ...] [--jobs 2]
+chronobox-ops validate [TASK ...] [--jobs 2] [--modes ...] [--repeat 5] [--grade both] [--log FILE]
 chronobox-ops run --tasks all --setups alone chronobox --model sonnet --out runs/my-run
 chronobox-ops report runs/my-run [more run dirs] --html report.html --markdown tables.md
 """
@@ -15,12 +15,13 @@ import sys
 from pathlib import Path
 
 from chronobox_ops.harness.agents import AgentOptions
+from chronobox_ops.harness.machine import GradeMode
 from chronobox_ops.harness.runner import RunOptions, run_grid
 from chronobox_ops.harness.setups import SETUPS
 from chronobox_ops.report import html, markdown
 from chronobox_ops.report.results import load
 from chronobox_ops.tasks import TASKS
-from chronobox_ops.validate import validate_all
+from chronobox_ops.validate import Mode, validate_all
 
 ALL = "all"
 DEFAULT_TOKEN_FILE = "~/.config/chronobox/claude-token"
@@ -41,7 +42,15 @@ def cmd_list(args: argparse.Namespace) -> None:
 
 
 def cmd_validate(args: argparse.Namespace) -> None:
-    problems = asyncio.run(validate_all(_names(args.tasks or [ALL], TASKS, "tasks"), args.jobs))
+    names = _names(args.tasks or [ALL], TASKS, "tasks")
+    problems = asyncio.run(
+        validate_all(names, jobs=args.jobs, modes=args.modes, repeat=args.repeat, grade=args.grade, log=args.log)
+    )
+    failing = sorted(name for name, found in problems.items() if found)
+    print(
+        f"{len(names) - len(failing)}/{len(names)} tasks valid"
+        + (f"; failing: {', '.join(failing)}" if failing else "")
+    )
     sys.exit(1 if any(problems.values()) else 0)
 
 
@@ -52,6 +61,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         agent=AgentOptions(model=args.model, max_usd=args.max_usd, claude=args.claude, token_file=args.token_file),
         agent_timeout=args.agent_timeout,
         force=args.force,
+        grade=args.grade,
     )
     tasks = _names(args.tasks, TASKS, "tasks")
     setups = _names(args.setups, SETUPS, "setups")
@@ -77,7 +87,12 @@ def parser() -> argparse.ArgumentParser:
 
     validation = commands.add_parser("validate", help="check that tasks behave as intended")
     validation.add_argument("tasks", nargs="*")
-    validation.add_argument("--jobs", type=int, default=2)
+    validation.add_argument("--jobs", type=int, default=2, help="upper bound; free memory decides")
+    validation.add_argument("--modes", nargs="+", type=Mode, choices=list(Mode), default=list(Mode))
+    validation.add_argument("--repeat", type=int, default=1, help="attempts per task and mode")
+    validation.add_argument("--grade", type=GradeMode, choices=list(GradeMode), default=GradeMode.FAST_FORWARD,
+                            help="'both' grades copies of the end state each way and flags disagreements")  # fmt: skip
+    validation.add_argument("--log", type=Path, help="append every attempt as a JSON line")
     validation.set_defaults(handler=cmd_validate)
 
     running = commands.add_parser("run", help="run tasks × setups × seeds with Claude Code")
@@ -96,6 +111,8 @@ def parser() -> argparse.ArgumentParser:
     running.add_argument("--token-file", type=Path, default=Path(DEFAULT_TOKEN_FILE),
                          help="Claude Code token for full-* setups (sandbox containers)")  # fmt: skip
     running.add_argument("--force", action="store_true", help="rerun finished runs")
+    running.add_argument("--grade", type=GradeMode, choices=list(GradeMode), default=GradeMode.FAST_FORWARD,
+                         help="'both' also grades a copy of the end state the natural way (other_grade)")  # fmt: skip
     running.set_defaults(handler=cmd_run)
 
     reporting = commands.add_parser("report", help="leaderboard, Markdown tables and an HTML report")

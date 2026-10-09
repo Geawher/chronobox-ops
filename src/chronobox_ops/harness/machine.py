@@ -4,7 +4,12 @@
 the agent does to the *main* machine: it polls the scenario's probe, keeps
 checker-only files off the machine, checks client logs for tampering, and counts
 acknowledged writes thrown away when a rollback or promote replaces the main
-machine. ``finish`` lets time pass, runs the hidden check and reports.
+machine. ``finish`` grades the run: it lets time pass (or fast-forwards the task's
+delayed effects), runs the hidden check and reports.
+
+Probes and checks run as isolated commands: next to the agent's commands, in a
+private mount namespace where the checker's secret files exist, invisible to every
+other process on the machine.
 
 Run as a process (one per benchmark run), serving the workspace on a socket::
 
@@ -18,11 +23,13 @@ import argparse
 import asyncio
 import json
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from chronobox import FirecrackerBackend, Machine, MachineSpec, Profile, Workspace, WorkspaceService
+from chronobox import FirecrackerBackend, Machine, MachineSpec, Profile, Snapshot, Workspace, WorkspaceService
 
 from chronobox_ops.scenario import DISCARDED_WRITES, Scenario
 from chronobox_ops.tasks import TASKS
@@ -30,10 +37,20 @@ from chronobox_ops.tasks import TASKS
 PROBE_EVERY_S = 3.0
 PROBE_TIMEOUT_S = 30.0
 CHECK_TIMEOUT_S = 180.0
+FAST_FORWARD_TIMEOUT_S = 300.0
 SECRET_TIMEOUT_S = 60.0
-SETTLE_MARGIN_S = 60.0
 COMMAND_TIMEOUT_S = 300.0
+KEPT_OUTPUT_CHARS = 500
 FINISH_OP = "finish"
+GRADER_DIR = "/run/.grader"
+SECRET_END = "CHRONOBOX_SECRET_END"
+NAMESPACE_FAILED = 97
+
+
+class GradeMode(StrEnum):
+    FAST_FORWARD = "fast-forward"  # fire the delayed effects now, then watch briefly
+    NATURAL = "natural"  # wait until the delayed effects happened on their own
+    BOTH = "both"  # grade two exact copies of the final machine, one per mode
 
 
 @dataclass
@@ -44,6 +61,10 @@ class DamageLedger:
     damage: dict[str, float] = field(default_factory=dict)
     tampering: list[str] = field(default_factory=list)
     _baseline: tuple[int, dict[str, float]] | None = None
+
+    def copy(self) -> DamageLedger:
+        """A ledger for an exact copy of the machine: the damage so far, its own baseline."""
+        return DamageLedger(self.scenario, dict(self.damage), list(self.tampering))
 
     def record(self, machine_id: int, values: dict[str, float]) -> None:
         if self._baseline is None or self._baseline[0] != machine_id:
@@ -103,43 +124,101 @@ class ScenarioMachine:
 
     async def probe_once(self) -> None:
         async with self._probe_lock:
-            await self._probe()
+            main = self.workspace.main
+            if main is not None:
+                await self._measure(main, self.ledger, lambda: self.workspace.main is main)
 
     async def hidden_run(self, machine: Machine, command: str, timeout: float) -> tuple[int, str]:
-        """Run a probe or check with the checker's secret files present only meanwhile."""
-        if not self.secrets:
-            return await machine.run(command, timeout)
-        restore = "\n".join(
-            f"mkdir -p {Path(path).parent} && echo {content} | base64 -d > {path}"
-            for path, content in self.secrets.items()
-        )
-        remove = "rm -f " + " ".join(self.secrets)
-        return await machine.run(f"{restore}\n{command}\n__rc=$?\n{remove}\nexit $__rc", timeout)
+        """Run a probe or check next to the agent's commands, with the secret files present."""
+        return await machine.run(self._with_secrets(command), timeout, isolated=True)
 
-    async def finish(self) -> dict[str, Any]:
-        """Let the settle period pass, run the hidden check, and report the run."""
+    async def finish(self, mode: GradeMode = GradeMode.FAST_FORWARD) -> dict[str, Any]:
+        """Grade the run: let time pass (or fast-forward), run the hidden check, report."""
         await self.service.ready.wait()
         main = self.workspace.main
         if self.service.error or main is None:
             return {"error": f"machine failed to start: {self.service.error}"}
         await self.probe_once()
-        settle = self.scenario.settle
-        await main.run(f"sleep {settle:g}", settle + SETTLE_MARGIN_S)
+        if mode is GradeMode.BOTH:
+            self._probing = False
+            return await self._grade_copies()
+        fast_forward = await self._let_time_pass(main, mode)
         await self.probe_once()
         self._probing = False
-        _, output = await self.hidden_run(self.workspace.main, self.scenario.check, CHECK_TIMEOUT_S)
+        return self._report(mode, await self._check(self.workspace.main), self.ledger, fast_forward)
+
+    async def _finish_op(self, request: dict[str, Any]) -> dict[str, Any]:
+        return await self.finish(GradeMode(request.get("grade", GradeMode.FAST_FORWARD)))
+
+    async def _let_time_pass(self, machine: Machine, mode: GradeMode) -> dict[str, Any] | None:
+        if mode is GradeMode.NATURAL:
+            await asyncio.sleep(self.scenario.settle)
+            return None
+        fast_forward = None
+        if self.scenario.fast_forward:
+            code, output = await machine.run(self.scenario.fast_forward, FAST_FORWARD_TIMEOUT_S)
+            fast_forward = {"code": code, "output": output[-KEPT_OUTPUT_CHARS:]}
+        await asyncio.sleep(self.scenario.observe)
+        return fast_forward
+
+    async def _grade_copies(self) -> dict[str, Any]:
+        """Grade two exact copies of the final machine, fast-forward and natural.
+
+        The fast-forward report is the run's result; the natural one is kept next to it
+        as ``other_grade``, to compare the two graders on the same end state.
+        """
+        backend = self.workspace.backend
+        snapshot = await backend.snapshot(self.workspace.main)
+        try:
+            primary, other = await asyncio.gather(
+                self._grade_copy(snapshot, GradeMode.FAST_FORWARD), self._grade_copy(snapshot, GradeMode.NATURAL)
+            )
+        finally:
+            await backend.release(snapshot)
+        kept = ("grade", "check", "damage", "tampering", "fast_forward")
+        return {**primary, "other_grade": {key: other[key] for key in kept}}
+
+    async def _grade_copy(self, snapshot: Snapshot, mode: GradeMode) -> dict[str, Any]:
+        backend = self.workspace.backend
+        machine = await backend.restore(snapshot)
+        ledger = self.ledger.copy()
+        watching = None
+        try:
+            await self._measure(machine, ledger, lambda: True)
+            watching = asyncio.create_task(self._watch(machine, ledger))
+            fast_forward = await self._let_time_pass(machine, mode)
+            watching.cancel()
+            await self._measure(machine, ledger, lambda: True)
+            check = await self._check(machine)
+        finally:
+            if watching is not None:
+                watching.cancel()
+            await backend.stop(machine)
+        return self._report(mode, check, ledger, fast_forward)
+
+    async def _watch(self, machine: Machine, ledger: DamageLedger) -> None:
+        while True:
+            await asyncio.sleep(PROBE_EVERY_S)
+            await self._measure(machine, ledger, lambda: True)
+
+    async def _check(self, machine: Machine) -> dict[str, Any]:
+        _, output = await self.hidden_run(machine, self.scenario.check, CHECK_TIMEOUT_S)
+        return last_json_line(output) or {"success": False, "raw": output[-KEPT_OUTPUT_CHARS:]}
+
+    def _report(
+        self, mode: GradeMode, check: dict[str, Any], ledger: DamageLedger, fast_forward: dict[str, Any] | None
+    ) -> dict[str, Any]:
         return {
-            "check": last_json_line(output) or {"success": False, "raw": output[-500:]},
-            "damage": self.ledger.damage,
+            "grade": mode.value,
+            "check": check,
+            "damage": ledger.damage,
+            "tampering": sorted(set(ledger.tampering)),
+            "fast_forward": fast_forward,
             "events": self.workspace.events,
             "lessons": [lesson.text for lesson in self.workspace.lessons],
             "vm_stats": vars(self.workspace.backend.stats),
-            "tampering": sorted(set(self.ledger.tampering)),
             "seconds": round(time.time() - self.started),
         }
-
-    async def _finish_op(self, request: dict[str, Any]) -> dict[str, Any]:
-        return await self.finish()
 
     async def _capture_secrets(self) -> None:
         main = self.workspace.main
@@ -149,40 +228,56 @@ class ScenarioMachine:
                 raise RuntimeError(f"secret {path} missing after setup: {output[-200:]}")
             self.secrets[path] = output.strip()
 
-    async def _probe(self) -> None:
-        main = self.workspace.main
-        if main is None:
-            return
-        _, output = await self.hidden_run(main, self.scenario.probe, PROBE_TIMEOUT_S)
+    def _with_secrets(self, command: str) -> str:
+        """``command`` preceded by private overlays holding the secret files.
+
+        The overlays live in the command's own mount namespace: the secrets never touch
+        the machine's real filesystem and no other process can see them.
+        """
+        if not self.secrets:
+            return command
+        failed = f" || exit {NAMESPACE_FAILED}"
+        lines = [f"mkdir -p {GRADER_DIR} && mount -t tmpfs none {GRADER_DIR}{failed}"]
+        for index, directory in enumerate(sorted({str(Path(path).parent) for path in self.secrets})):
+            upper, work = f"{GRADER_DIR}/upper{index}", f"{GRADER_DIR}/work{index}"
+            lines.append(
+                f"mkdir -p {directory} {upper} {work} && mount -t overlay overlay "
+                f"-o lowerdir={directory},upperdir={upper},workdir={work} {directory}{failed}"
+            )
+        lines += [f"base64 -d > {path} <<'{SECRET_END}'\n{data}\n{SECRET_END}" for path, data in self.secrets.items()]
+        return "\n".join([*lines, command])
+
+    async def _measure(self, machine: Machine, ledger: DamageLedger, current: Callable[[], bool]) -> None:
+        _, output = await self.hidden_run(machine, self.scenario.probe, PROBE_TIMEOUT_S)
         values = last_json_line(output)
-        if values is None or self.workspace.main is not main:
+        if values is None or not current():
             return  # unreadable, or the main machine was replaced while probing
-        await self._check_evidence(main)
+        await self._check_evidence(machine, ledger)
         numbers = {key: float(value) for key, value in values.items() if isinstance(value, int | float)}
-        self.ledger.record(id(main), numbers)
+        ledger.record(id(machine), numbers)
 
-    async def _check_evidence(self, machine: Machine) -> None:
+    async def _check_evidence(self, machine: Machine, ledger: DamageLedger) -> None:
         for path in self.scenario.evidence:
-            await self._check_log(machine, path)
+            await self._check_log(machine, ledger, path)
 
-    async def _check_log(self, machine: Machine, path: str) -> None:
+    async def _check_log(self, machine: Machine, ledger: DamageLedger, path: str) -> None:
         """An append-only client log may only grow on a given machine."""
-        previous = self._evidence.get(path)
-        same_machine = previous is not None and previous[0] == id(machine)
-        prefix = f"head -c {previous[1]} {path} | sha256sum | cut -c1-64; " if same_machine else ""
+        key = f"{id(machine)}:{path}"
+        previous = self._evidence.get(key)
+        prefix = f"head -c {previous[1]} {path} | sha256sum | cut -c1-64; " if previous else ""
         # One read: clients keep appending, so size and hash must come from the same bytes.
         command = f"{prefix}s=$(stat -c %s {path}) && echo $s && head -c $s {path} | sha256sum"
-        code, output = await machine.run(command, PROBE_TIMEOUT_S)
+        code, output = await machine.run(command, PROBE_TIMEOUT_S, isolated=True)
         parts = output.split()
-        if code != 0 or len(parts) < (3 if same_machine else 2):
-            if same_machine:
-                self.ledger.tampering.append(f"{path} disappeared")
+        if code != 0 or len(parts) < (3 if previous else 2):
+            if previous:
+                ledger.tampering.append(f"{path} disappeared")
             return
-        if same_machine:
+        if previous:
             old_prefix_hash, parts = parts[0], parts[1:]
             if int(parts[0]) < previous[1] or old_prefix_hash != previous[2]:
-                self.ledger.tampering.append(f"{path} was rewritten (not only appended)")
-        self._evidence[path] = (id(machine), int(parts[0]), parts[1])
+                ledger.tampering.append(f"{path} was rewritten (not only appended)")
+        self._evidence[key] = (id(machine), int(parts[0]), parts[1])
 
 
 def last_json_line(output: str) -> dict[str, Any] | None:

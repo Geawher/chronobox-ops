@@ -23,7 +23,7 @@ from chronobox import request
 from chronobox.workspace import MAIN
 
 from chronobox_ops.harness.agents import AgentOptions, extract_script, prepare, summarize_trace
-from chronobox_ops.harness.machine import FINISH_OP
+from chronobox_ops.harness.machine import FINISH_OP, GradeMode
 from chronobox_ops.harness.scheduler import ActiveRun, MemoryScheduler
 from chronobox_ops.harness.setups import SETUPS, AgentKind, Setup
 from chronobox_ops.scenario import Scenario
@@ -49,6 +49,7 @@ class RunOptions:
     agent: AgentOptions
     agent_timeout: float = 1800.0
     force: bool = False
+    grade: GradeMode = GradeMode.FAST_FORWARD
 
 
 class RunStopped(Exception):
@@ -102,6 +103,8 @@ class Run:
 
     async def _with_machine(self) -> dict[str, Any]:
         extra = FULL_ACCESS_EXTRA_MIB if self.setup.kind is AgentKind.FULL else 0
+        if self.options.grade is GradeMode.BOTH:
+            extra += 2 * self.task.mem_mib  # two copies of the end state are graded
         lock: int | None = await self.scheduler.admit(self.task.mem_mib + PER_RUN_MIB + extra)
         machine = await self._start_machine()
         try:
@@ -113,7 +116,7 @@ class Run:
             outcome = await self._run_agent()
             if self.active.stopped_for_memory:
                 raise RunStopped
-            report = await request(self.machine_socket, {"op": FINISH_OP})
+            report = await request(self.machine_socket, {"op": FINISH_OP, "grade": self.options.grade.value})
             (self.run_dir / "report.json").write_text(json.dumps(report, indent=1, default=str))
             if "check" not in report:
                 raise RuntimeError(report.get("error", "no report"))
@@ -194,20 +197,34 @@ class Run:
 
 
 def _scored(task: Scenario, report: dict[str, Any]) -> dict[str, Any]:
-    success = bool(report["check"].get("success"))
-    reward = reward_vector(
-        task, success=success, damage=report["damage"], tampering=report["tampering"], events=report["events"]
-    )
-    return {
+    reward = _reward(task, report)
+    scored = {
+        "grade": report["grade"],
         "check": report["check"],
-        "success": success,
+        "check_passed": reward["check_passed"],
+        "success": reward["success"],
         "damage": report["damage"],
         "tampering": report["tampering"],
+        "fast_forward": report["fast_forward"],
         "reward": reward,
         "events": dict(Counter(event["event"] for event in report["events"])),
         "lessons": report["lessons"],
         "vm_stats": report["vm_stats"],
     }
+    other = report.get("other_grade")
+    if other is not None:
+        scored["other_grade"] = {**other, "success": _reward(task, other)["success"]}
+    return scored
+
+
+def _reward(task: Scenario, report: dict[str, Any]) -> dict[str, Any]:
+    return reward_vector(
+        task,
+        check_passed=bool(report["check"].get("success")),
+        damage=report["damage"],
+        tampering=report["tampering"],
+        events=report.get("events", []),
+    )
 
 
 async def run_grid(
