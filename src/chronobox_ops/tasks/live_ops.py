@@ -107,14 +107,14 @@ DISK_STATE = textwrap.dedent(f"""
     import json, os, shutil, subprocess
     needed = subprocess.run(["sha256sum", "-c", "--quiet", {DISK_NEEDED_SHA!r}], capture_output=True).returncode == 0
     proc = "/proc/" + open({DISK_APP_PID!r}).read().strip()
-    def target(fd):
+    def writes_log(fd):  # same file, not same path: probes see the machine's paths under another root
         try:
-            return os.readlink(proc + "/fd/" + fd)
+            return os.path.samefile(proc + "/fd/" + fd, "/srv/logs/app.log")
         except OSError:
-            return ""
+            return False
     try:
         alive = b"srvapp" in open(proc + "/cmdline", "rb").read()
-        log_live = any(target(fd) == "/srv/logs/app.log" for fd in os.listdir(proc + "/fd"))
+        log_live = any(writes_log(fd) for fd in os.listdir(proc + "/fd"))
     except OSError:
         alive = log_live = False
 """).strip()
