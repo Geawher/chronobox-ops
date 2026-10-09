@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 # ruff: noqa: E501
+import hashlib
 import textwrap
 
 from chronobox_ops.scenario import Scenario
@@ -524,7 +525,7 @@ CHAIN_SRC = (
     import base64, hashlib, json, os, secrets
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     USER = "__USER__"
-    PASS = "__PASS__"
+    PASS_SHA256 = "__PASS_SHA256__"  # only a hash: the compiled service must not hold the password
     with open("/opt/svc2/note.dat", "rb") as f:
         NOTE = f.read()
     os.remove("/opt/svc2/note.dat")  # note ciphertext only lives in this process now
@@ -549,7 +550,7 @@ CHAIN_SRC = (
             if self.path == "/login":
                 if STATE["locked"]:
                     return self.reply(423, {"error": "account locked after too many bad logins"})
-                if d.get("user") == USER and d.get("password") == PASS:
+                if d.get("user") == USER and hashlib.sha256(str(d.get("password")).encode()).hexdigest() == PASS_SHA256:
                     STATE["session"] = secrets.token_hex(8)
                     return self.reply(200, {"session": STATE["session"]})
                 STATE["bad"] += 1
@@ -578,7 +579,7 @@ CHAIN_SRC = (
 """
     )
     .replace("__USER__", CHAIN_USER)
-    .replace("__PASS__", CHAIN_PASS)
+    .replace("__PASS_SHA256__", hashlib.sha256(CHAIN_PASS.encode()).hexdigest())
 )
 
 CHAIN_MAKE = """
