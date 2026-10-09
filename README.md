@@ -16,7 +16,8 @@ success after a waiting period (so fixes that only hold briefly fail), and hidde
 probes measure the damage along the way.
 
 **Results:** [LEADERBOARD.md](LEADERBOARD.md) ·
-[findings](results/2026-10/RESULTS.md) · [every run](results/2026-10/report.html)
+[findings](results/2026-10/RESULTS.md) · [every run](results/2026-10/report.html) ·
+[how the grader was validated](results/2026-10/VALIDATION.md)
 
 ## Tasks
 
@@ -119,8 +120,11 @@ benchmark's authors are the most valuable contribution.
 
 - Linux + KVM only (the machines are Firecracker microVMs).
 - The tasks so far were written by the benchmark's authors and supervised coding
-  agents, and do not challenge the strongest models (Opus solves all of them).
-- The agent is root inside the VM: secrets are kept off the machine and tampering with
+  agents, and do not challenge the strongest models (Opus succeeds in 97–100% of
+  interactive runs).
+- The published runs were graded before the tasks were hardened; they are rescored from
+  what their probes recorded (see the findings).
+- The agent is root inside the VM: checker data never touches its filesystem and tampering with
   client logs is detected, but a determined agent could still try to fool a checker;
   runs flagged as tampered score 0 and every transcript is kept for audit.
 
@@ -129,8 +133,8 @@ benchmark's authors are the most valuable contribution.
 ```
 src/chronobox_ops/  scenario.py · tasks/ (30 tasks by theme) · scoring.py · validate.py · cli.py
                     harness/ (machine: probes, secrets, damage · setups · agents · scheduler · runner)
-                    report/ (results, Markdown tables, HTML report)
+                    report/ (results, Markdown tables, HTML report, validation report)
 agent/              sandbox image for full-access setups
 docs/AUTHORING.md   how to write a task
-results/2026-10/    findings, tables, raw results, HTML report
+results/2026-10/    findings, tables, raw results, HTML report, validation evidence
 ```

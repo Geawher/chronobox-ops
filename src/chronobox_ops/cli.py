@@ -4,6 +4,7 @@ chronobox-ops list
 chronobox-ops validate [TASK ...] [--jobs 2] [--modes ...] [--repeat 5] [--grade both] [--log FILE]
 chronobox-ops run --tasks all --setups alone chronobox --model sonnet --out runs/my-run
 chronobox-ops report runs/my-run [more run dirs] --html report.html --markdown tables.md
+chronobox-ops validation-report validate-log.jsonl --runs runs/both-graded --out VALIDATION.md
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from chronobox_ops.harness.agents import AgentOptions
 from chronobox_ops.harness.machine import GradeMode
 from chronobox_ops.harness.runner import RunOptions, run_grid
 from chronobox_ops.harness.setups import SETUPS
-from chronobox_ops.report import html, markdown
+from chronobox_ops.report import html, markdown, validation
 from chronobox_ops.report.results import export, load
 from chronobox_ops.tasks import TASKS
 from chronobox_ops.validate import Mode, validate_all
@@ -76,16 +77,26 @@ def cmd_run(args: argparse.Namespace) -> None:
     asyncio.run(run_grid(tasks, setups, args.seeds, args.jobs, options))
 
 
+def _published(text: str) -> str:
+    """Agents sometimes quote local paths; published reports must not reveal the host's home."""
+    return text.replace(str(Path.home()), "~")
+
+
 def cmd_report(args: argparse.Namespace) -> None:
     results = load(args.runs)
     if args.html:
-        args.html.write_text(html.render(results, args.title))
+        args.html.write_text(_published(html.render(results, args.title)))
     if args.markdown:
-        args.markdown.write_text(markdown.full_report(results))
+        args.markdown.write_text(_published(markdown.full_report(results)))
     if args.json:
-        args.json.write_text(export(results))
+        args.json.write_text(_published(export(results)))
     if not args.html and not args.markdown and not args.json:
         print(markdown.leaderboard(results))
+
+
+def cmd_validation_report(args: argparse.Namespace) -> None:
+    runs = load(args.runs) if args.runs else []
+    args.out.write_text(validation.render(validation.read_attempts(args.log), runs))
 
 
 def parser() -> argparse.ArgumentParser:
@@ -133,6 +144,12 @@ def parser() -> argparse.ArgumentParser:
     reporting.add_argument("--json", type=Path, help="export the rescored results (reloadable)")
     reporting.add_argument("--title", default="chronobox-ops results")
     reporting.set_defaults(handler=cmd_report)
+
+    checking = commands.add_parser("validation-report", help="VALIDATION.md from a validate --log file")
+    checking.add_argument("log", type=Path)
+    checking.add_argument("--runs", nargs="*", type=Path, help="agent runs graded with --grade both")
+    checking.add_argument("--out", type=Path, default=Path("VALIDATION.md"))
+    checking.set_defaults(handler=cmd_validation_report)
     return root
 
 
