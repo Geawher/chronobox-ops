@@ -841,10 +841,12 @@ def tasks() -> list[Scenario]:
             '"ordersvc_down": 0 if alive else 1}))\nPY',
             check=ORDERS_AUDIT
             + textwrap.dedent("""
-                import bz2, gzip, hashlib, lzma, shutil, time
+                import bz2, gzip, hashlib, lzma, shutil, tarfile, time, zipfile
                 DIR = "/var/log/orders"
                 LOG = DIR + "/orders.log"
-                OPENERS = {".gz": gzip.open, ".xz": lzma.open, ".bz2": bz2.open}
+                FIRST = b"2026-10-01T00:00:00.000 INFO ordersvc 3.2.1 started run_id="
+                # the old log may be kept anywhere (compressed, archived) but on these system dirs
+                SYSTEM = {"proc", "sys", "dev", "run", "data", "usr", "lib", "lib64", "bin", "sbin", "boot", "etc"}
                 seed_size, seed_digest = open("/root/.orders_seed").read().split()
                 seed_size = int(seed_size)
                 # read before the logs: every order acknowledged so far was logged before its reply
@@ -855,29 +857,53 @@ def tasks() -> list[Scenario]:
                         return os.stat(LOG).st_size
                     except OSError:
                         return -1
-                def scan(path):
-                    # (starts with the whole original log, ids of the client orders it holds)
-                    digest, read, ids = hashlib.sha256(), 0, set()
+                def streams(path):
+                    # every file a path holds: the file itself (decompressed) or the members of an archive
                     try:
-                        with OPENERS.get(os.path.splitext(path)[1], open)(path, "rb") as f:
-                            for line in f:
-                                if read < seed_size:
-                                    digest.update(line)
-                                    read += len(line)
-                                if b" order accepted id=w" in line:
-                                    ids.add(line.split(b" id=", 1)[1].split(b" ", 1)[0].decode())
+                        if zipfile.is_zipfile(path):
+                            z = zipfile.ZipFile(path)
+                            return [lambda n=n: z.open(n) for n in z.namelist()]
+                        if tarfile.is_tarfile(path):
+                            t = tarfile.open(path, "r:*")
+                            return [lambda m=m: t.extractfile(m) for m in t.getmembers() if m.isfile()]
+                        head = open(path, "rb").read(6)
                     except Exception:
-                        pass
-                    return read == seed_size and digest.hexdigest() == seed_digest, ids
+                        return []
+                    opener = (gzip.open if head[:2] == b"\\x1f\\x8b" else lzma.open if head == b"\\xfd7zXZ\\x00"
+                              else bz2.open if head[:3] == b"BZh" else open)
+                    return [lambda: opener(path, "rb")]
+                def scan(path, anywhere):
+                    # (a file of `path` starts with the whole original log, ids of the client orders they hold)
+                    whole, ids = False, set()
+                    for stream in streams(path):
+                        digest, read = hashlib.sha256(), 0
+                        try:
+                            with stream() as f:
+                                if not anywhere and f.read(len(FIRST)) != FIRST:
+                                    continue  # outside the log volume only copies of the old log count
+                            with stream() as f:
+                                for line in f:
+                                    if read < seed_size:
+                                        digest.update(line)
+                                        read += len(line)
+                                    if b" order accepted id=w" in line:
+                                        ids.add(line.split(b" id=", 1)[1].split(b" ", 1)[0].decode())
+                        except Exception:
+                            pass
+                        whole = whole or (read == seed_size and digest.hexdigest() == seed_digest)
+                    return whole, ids
                 before = size(); time.sleep(4); after = size()
                 logging = before >= 0 and after > before
-                kept, logged = False, set()
-                for root, _, names in os.walk(DIR):
-                    for name in names:
-                        path = os.path.join(root, name)
-                        if os.path.isfile(path) and not os.path.islink(path):
-                            whole, ids = scan(path)
-                            kept, logged = kept or whole, logged | ids
+                kept, logged, seen = False, set(), set()
+                tops = ["/" + d for d in sorted(os.listdir("/")) if d not in SYSTEM]
+                for top in [DIR, *tops]:
+                    for root, dirs, names in os.walk(top):
+                        for name in names:
+                            path = os.path.join(root, name)
+                            if os.path.isfile(path) and not os.path.islink(path) and os.path.realpath(path) not in seen:
+                                seen.add(os.path.realpath(path))
+                                whole, ids = scan(path, top == DIR)
+                                kept, logged = kept or whole, logged | ids
                 lost = len(acked - logged)
                 print(json.dumps({"success": free >= 64 and logging and kept and alive and lost == 0,
                                   "free_mb": free, "logging_to_orders_log": logging, "old_log_kept": kept,
