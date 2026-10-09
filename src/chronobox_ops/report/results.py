@@ -13,7 +13,7 @@ from pathlib import Path
 from statistics import fmean
 from typing import Any
 
-from chronobox_ops.scoring import LEGACY_GRADING, rescore
+from chronobox_ops.scoring import rescore
 from chronobox_ops.tasks import TASKS
 
 MODELS = ("haiku", "sonnet", "opus")
@@ -43,7 +43,6 @@ def load(sources: Iterable[Path]) -> list[dict[str, Any]]:
             if result.get("error") or result["scenario"] not in TASKS:
                 continue
             result["model"] = result.get("model") or _model_from_dir(source)
-            result.setdefault(LEGACY_GRADING, "check_passed" not in result)
             result["reward"] = rescore(result, TASKS[result["scenario"]])
             result["check_passed"] = result["reward"]["check_passed"]
             result["success"] = result["reward"]["success"]

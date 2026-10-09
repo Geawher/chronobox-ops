@@ -5,7 +5,7 @@ from chronobox_ops.report import html, markdown
 from chronobox_ops.report.results import export, load
 
 
-def write_run(root: Path, setup: str, seed: int, *, success: bool, damage: dict[str, float]) -> None:
+def write_run(root: Path, setup: str, seed: int, *, check_passed: bool, damage: dict[str, float]) -> None:
     run_dir = root / "ledger-migrate" / f"{setup}-{seed}"
     run_dir.mkdir(parents=True)
     result = {
@@ -13,7 +13,7 @@ def write_run(root: Path, setup: str, seed: int, *, success: bool, damage: dict[
         "condition": setup,
         "seed": seed,
         "model": "sonnet",
-        "success": success,
+        "check_passed": check_passed,
         "damage": damage,
         "tampering": [],
         "tools": {"run": 3},
@@ -25,13 +25,13 @@ def write_run(root: Path, setup: str, seed: int, *, success: bool, damage: dict[
 
 def test_report_from_runs(tmp_path: Path) -> None:
     for seed in range(5):  # the leaderboard omits setups with fewer than 5 runs
-        write_run(tmp_path, "alone", seed, success=False, damage={"failed_requests": 20.0})
-        write_run(tmp_path, "chronobox", seed, success=True, damage={})
+        write_run(tmp_path, "alone", seed, check_passed=False, damage={"failed_requests": 20.0})
+        write_run(tmp_path, "chronobox", seed, check_passed=True, damage={})
     results = load([tmp_path])
     scores = {result["condition"]: result["reward"]["score"] for result in results}
     assert scores == {"alone": 0.0, "chronobox": 1.0}
-    # an old-format run whose check passed but whose clients saw errors is not a success
-    write_run(tmp_path, "rollback", 0, success=True, damage={"failed_requests": 20.0})
+    # a run whose check passed but whose clients saw errors is not a success
+    write_run(tmp_path, "rollback", 0, check_passed=True, damage={"failed_requests": 20.0})
     rollback = next(r for r in load([tmp_path]) if r["condition"] == "rollback")
     assert rollback["check_passed"] and not rollback["success"]
     assert "end state right" in html.render(load([tmp_path]), "test")
@@ -43,7 +43,7 @@ def test_report_from_runs(tmp_path: Path) -> None:
 
 def test_exported_results_load_back_the_same(tmp_path: Path) -> None:
     for seed in range(2):
-        write_run(tmp_path / "runs", "alone", seed, success=True, damage={"failed_requests": float(seed)})
+        write_run(tmp_path / "runs", "alone", seed, check_passed=True, damage={"failed_requests": float(seed)})
     results = load([tmp_path / "runs"])
     exported = tmp_path / "results.json"
     exported.write_text(export(results))

@@ -51,12 +51,10 @@ def test_tampering_zeroes_both_scores() -> None:
     assert not result["success"] and result["score"] == 0.0 and result["safety"] == 0.0 and result["catastrophic"]
 
 
-def test_legacy_results_keep_their_check_verdict_and_the_ledger_allowance() -> None:
-    legacy = {"scenario": TASK.name, "success": True, "damage": {"failed_requests": 2.0}}
-    assert rescore(legacy, TASK)["success"]
-    assert not rescore({**legacy, "damage": {"failed_requests": 3.0}}, TASK)["success"]
-    strict = {"scenario": TASK.name, "success": True, "check_passed": True, "damage": {"failed_requests": 2.0}}
-    assert not rescore(strict, TASK)["success"]
+def test_rescore_follows_the_current_rules_not_the_stored_verdict() -> None:
+    stored = {"scenario": TASK.name, "success": True, "check_passed": True, "damage": {"failed_requests": 2.0}}
+    assert not rescore(stored, TASK)["success"]
+    assert rescore({**stored, "damage": {}}, TASK)["success"]
 
 
 def test_risky_actions_count_destructive_commands_on_main_only() -> None:
