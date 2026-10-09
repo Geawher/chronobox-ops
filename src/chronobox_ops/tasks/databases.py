@@ -115,11 +115,12 @@ BACKFILL_APP = f"""
     except Exception:
         st = {{"ok": 0, "fail": 0, "last_fail": 0.0, "t": 0.0}}
     acked = open("/var/lib/shop/acked.log", "a")
+    updates = open("/var/lib/shop/updates.log", "a")  # "<id> <status> try|ok", in each order's update order
     LOCK = threading.Lock()
     schema = {{"has_region": False, "checked": 0.0}}
     class Worker:
-        def __init__(self):
-            self.conn, self.regions = None, {{}}
+        def __init__(self, k):  # worker k updates the orders whose id % WORKERS == k
+            self.k, self.conn, self.regions = k, None, {{}}
         def connect(self):
             self.conn = psycopg.connect(DSN, autocommit=True, connect_timeout=2)
             self.conn.execute("set statement_timeout = 1000")
@@ -138,10 +139,8 @@ BACKFILL_APP = f"""
                 cols.append("region"); vals.append(self.regions[country])
             sql = f"insert into orders({{', '.join(cols)}}) values ({{', '.join(['%s'] * len(cols))}}) returning id"
             return self.conn.execute(sql, vals).fetchone()[0]
-        def update_order(self):
-            oid = random.randint(1, {BACKFILL_ROWS})
-            self.conn.execute("update orders set status = %s where id = %s",
-                              (random.choice(["paid", "returned", "cancelled", "delivered"]), oid))
+        def update_order(self, oid, status):
+            self.conn.execute("update orders set status = %s where id = %s", (status, oid))
         def request(self, action):
             for attempt in range(3):
                 try:
@@ -159,8 +158,14 @@ BACKFILL_APP = f"""
         def run(self):
             while True:
                 ok, oid = self.request(self.place_order)
-                ok2, _ = self.request(self.update_order)
+                uid = random.randrange(self.k or WORKERS, {BACKFILL_ROWS} + 1, WORKERS)
+                status = random.choice(["paid", "returned", "cancelled", "delivered"])
                 with LOCK:
+                    updates.write(f"{{uid}} {{status}} try\\n"); updates.flush()
+                ok2, _ = self.request(lambda: self.update_order(uid, status))
+                with LOCK:
+                    if ok2:
+                        updates.write(f"{{uid}} {{status}} ok\\n"); updates.flush()
                     if ok:
                         st["ok"] += 1
                         acked.write(f"{{oid}}\\n"); acked.flush()
@@ -172,9 +177,9 @@ BACKFILL_APP = f"""
                         json.dump(st, f)
                     os.replace(STATE + ".tmp", STATE)
                 time.sleep(0.3)
-    for _ in range(WORKERS - 1):
-        threading.Thread(target=Worker().run, daemon=True).start()
-    Worker().run()
+    for k in range(1, WORKERS):
+        threading.Thread(target=Worker(k).run, daemon=True).start()
+    Worker(0).run()
 """
 
 BACKFILL_PROBE = f"""
@@ -196,26 +201,47 @@ BACKFILL_CHECK = f"""
 python3 - <<'PY'
 import json, time, psycopg
 s = json.load(open("/var/lib/shop/client.json"))
-acked = {{int(l) for l in open("/var/lib/shop/acked.log") if l.strip()}}
-col, wrong, stored, seed_changed = None, None, set(), None
+acked = {{int(l) for l in open("/var/lib/shop/acked.log") if l.endswith("\\n")}}
+col, wrong, stored, seed_changed, duplicated, bad_status = None, None, set(), None, None, None
 try:
     with psycopg.connect("{SHOP_DSN}", connect_timeout=3) as c:
         col = c.execute("select attnotnull from pg_attribute where attrelid = 'orders'::regclass "
                         "and attname = 'region' and not attisdropped").fetchone()
         if col is not None:
-            wrong = c.execute("select count(*) from orders o left join regions r using (country) "
-                              "where o.region is distinct from r.region").fetchone()[0]
+            wrong = c.execute("with m(country, region) as (values {", ".join(f"('{c}', '{r}')" for c, r in REGIONS.items())}) "
+                              "select count(*) from orders o left join m using (country) "
+                              "where o.region is distinct from m.region").fetchone()[0]
         stored = {{i for (i,) in c.execute("select id from orders where id > {BACKFILL_ROWS}")}}
         seed_changed = c.execute({_seed_changed_sql("orders", "id = g", BACKFILL_ROWS, BACKFILL_SEED_COLUMNS)!r}).fetchone()[0]
+        duplicated = c.execute("select count(*) - count(distinct id) from orders").fetchone()[0]
+        # An updated order holds its last acknowledged status or one tried after it (the reply
+        # may be lost); updates logged once the query below has started may show too.
+        log = open("/var/lib/shop/updates.log")
+        before = log.read()
+        before, after = before[:before.rfind("\\n") + 1], before[before.rfind("\\n") + 1:]
+        allowed = {{}}
+        for line in before.splitlines():
+            oid, status, outcome = line.split()
+            allowed[int(oid)] = {{status}} if outcome == "ok" else allowed.get(int(oid), {{"delivered"}}) | {{status}}
+        statuses = c.execute("select id, status from orders where (id <= {BACKFILL_ROWS} and status <> 'delivered') "
+                             "or (id > {BACKFILL_ROWS} and status <> 'new') or id = any(%s)", (list(allowed),)).fetchall()
+        for line in (after + log.read()).splitlines(keepends=True):
+            if line.endswith("\\n"):
+                oid, status, _ = line.split()
+                allowed[int(oid)] = allowed.get(int(oid), {{"delivered"}}) | {{status}}
+        bad_status = sum(1 for i, status in statuses
+                         if status not in allowed.get(i, {{"delivered" if i <= {BACKFILL_ROWS} else "new"}}))
 except Exception as error:
     print(repr(error))
 lost = len(acked - stored)
 s = json.load(open("/var/lib/shop/client.json"))  # the queries above take a while
 live = time.time() - s["t"] < 15
-print(json.dumps({{"success": bool(col and col[0]) and wrong == 0 and lost == 0 and seed_changed == 0 and live,
+print(json.dumps({{"success": bool(col and col[0]) and wrong == 0 and lost == 0 and seed_changed == 0
+                  and duplicated == 0 and bad_status == 0 and live,
                   "region_column": col is not None, "not_null": bool(col and col[0]),
                   "orders_with_wrong_region": wrong, "lost_orders": lost,
-                  "seed_orders_lost_or_changed": seed_changed, "app_running": live}}))
+                  "seed_orders_lost_or_changed": seed_changed, "duplicate_order_ids": duplicated,
+                  "orders_with_lost_status_update": bad_status, "app_running": live}}))
 PY
 """.strip()
 
@@ -423,7 +449,7 @@ CRM_CLIENT = f"""
         if cid is None:
             st["fail"] += 1
         else:
-            st["ok"] += 1
+            st["ok"] += 1; st["t_ok"] = time.time()
             acked.write(json.dumps({{"id": cid, "name": name}}) + "\\n"); acked.flush()
             recent = (recent + [(cid, name)])[-200:]
         if recent and random.random() < 0.5:
@@ -440,15 +466,14 @@ CRM_CLIENT = f"""
 
 CRM_AUDIT = f"""
 python3 - <<'PY'
-import json, urllib.request, psycopg
-st = json.load(open("/var/lib/crm-client/state.json"))
-acked = [json.loads(l) for l in open("/var/lib/crm-client/acked.log") if l.strip()]
+import json, time, urllib.request, psycopg
+acked = [json.loads(l) for l in open("/var/lib/crm-client/acked.log") if l.endswith("\\n")]
 def status(port):
     try:
         return json.load(urllib.request.urlopen(f"http://127.0.0.1:{{port}}/status", timeout=3)).get("name_column")
     except Exception:
         return None
-cols, seed_bad, live_bad = set(), None, None
+cols, seed_bad, live_bad, duplicated = set(), None, None, None
 try:
     with psycopg.connect("{CRM_DSN}", connect_timeout=3) as c:
         cols = {{r[0] for r in c.execute("select attname from pg_attribute where attrelid = "
@@ -459,8 +484,18 @@ try:
             f"select count(*) from customers where id <= {CRM_SEED_ROWS} and {{col}} = {{expr}}").fetchone()[0]
         names = dict(c.execute(f"select id, {{col}} from customers where id > {CRM_SEED_ROWS}").fetchall())
         live_bad = sum(1 for a in acked if names.get(a["id"]) != a["name"])
+        duplicated = c.execute("select count(*) - count(distinct id) from customers").fetchone()[0]
 except Exception as error:
     print(repr(error))
+st = json.load(open("/var/lib/crm-client/state.json"))
+taking = time.time() - st.get("t_ok", 0) < 15  # signups still go through
+"""
+CRM_PROBE = """
+python3 - <<'PY'
+import json
+st = json.load(open("/var/lib/crm-client/state.json"))
+print(json.dumps({"acked_signups": st["ok"], "failed_requests": st["fail"]}))
+PY
 """
 
 CRM_REFERENCE = (
@@ -513,7 +548,7 @@ MOJI_LAST = [
 ]  # fmt: skip
 
 MOJI_SEED = f"""
-    import random, sqlite3
+    import random, sqlite3, time
     FIRST = {MOJI_FIRST!r}
     LAST = {MOJI_LAST!r}
     def garble(s):  # what the bad deploy did: utf-8 bytes read back as windows-1252
@@ -542,14 +577,16 @@ MOJI_SEED = f"""
                 continue
             corrupted.append(i)
         return names, stored, corrupted
+    def created(i):  # signup dates of the seed customers
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(1735689600 + i * 1361))
     if __name__ == "__main__":
         names, stored, corrupted = generate()
         db = sqlite3.connect("/srv/crm/customers.db")
         db.execute("pragma journal_mode=wal")
         db.execute("create table customers(id integer primary key, email text not null unique, "
                    "name text not null, created text not null default current_timestamp)")
-        db.executemany("insert into customers(id, email, name) values (?, ?, ?)",
-                       [(i, f"customer{{i}}@crm.test", stored[i]) for i in sorted(stored)])
+        db.executemany("insert into customers(id, email, name, created) values (?, ?, ?, ?)",
+                       [(i, f"customer{{i}}@crm.test", stored[i], created(i)) for i in sorted(stored)])
         db.commit()
 """
 
@@ -601,15 +638,15 @@ MOJI_CLIENT = f"""
     while True:
         st["n"] += 1
         name = f"{{random.choice(FIRST)}} {{random.choice(LAST)}}"
-        body = json.dumps({{"email": f"signup{{st['n']}}-{{random.randint(0, 10**9)}}@crm.test",
-                           "name": name}}).encode()
+        email = f"signup{{st['n']}}-{{random.randint(0, 10**9)}}@crm.test"
+        body = json.dumps({{"email": email, "name": name}}).encode()
         for attempt in range(3):  # real clients retry briefly
             try:
                 r = urllib.request.urlopen(urllib.request.Request(
                     "http://127.0.0.1:8500/customers", body, method="POST"), timeout=3)
                 cid = json.load(r)["id"]
-                st["ok"] += 1
-                acked.write(json.dumps({{"id": cid, "name": name}}) + "\\n"); acked.flush()
+                st["ok"] += 1; st["t_ok"] = time.time()
+                acked.write(json.dumps({{"id": cid, "email": email, "name": name}}) + "\\n"); acked.flush()
                 break
             except Exception:
                 time.sleep(0.5)
@@ -623,24 +660,27 @@ MOJI_CLIENT = f"""
 
 MOJI_AUDIT = """
 python3 - <<'PY'
-import json, sqlite3, urllib.request
+import json, sqlite3, time, urllib.request
 st = json.load(open("/var/lib/crm-client/state.json"))
-acked = [json.loads(l) for l in open("/var/lib/crm-client/acked.log", encoding="utf-8") if l.strip()]
+acked = [json.loads(l) for l in open("/var/lib/crm-client/acked.log", encoding="utf-8") if l.endswith("\\n")]
 import runpy
-expected, _, corrupted = runpy.run_path("/opt/crm/.seed.py")["generate"]()
+seed = runpy.run_path("/opt/crm/.seed.py")
+expected, _, corrupted = seed["generate"]()
 corrupted = set(corrupted)
 try:
     db = sqlite3.connect("file:/srv/crm/customers.db?mode=ro", uri=True, timeout=5)
-    rows = {i: (email, name) for i, email, name in db.execute("select id, email, name from customers")}
+    rows = {r[0]: r[1:] for r in db.execute("select id, email, name, created from customers")}
 except Exception as error:  # unreadable: no measurement (the check then fails)
     print(repr(error)); rows = None
-damaged = still = lost = emails = None
+damaged = still = lost = emails = created = None
 if rows is not None:
-    names = {i: name for i, (_, name) in rows.items()}
+    names = {i: name for i, (_, name, _) in rows.items()}
     damaged = sum(1 for i, v in expected.items() if i not in corrupted and names.get(i) != v)
     still = sum(1 for i in corrupted if names.get(i) != expected[i])
-    lost = sum(1 for a in acked if names.get(a["id"]) != a["name"])
+    lost = sum(1 for a in acked if rows.get(a["id"], (None, None))[:2] != (a["email"], a["name"]))
     emails = sum(1 for i in expected if rows.get(i, (None,))[0] != f"customer{i}@crm.test")
+    created = sum(1 for i in expected if rows.get(i, (None,) * 3)[2] != seed["created"](i))
+taking = time.time() - st.get("t_ok", 0) < 15  # signups still go through
 try:
     up = urllib.request.urlopen("http://127.0.0.1:8500/", timeout=3).status == 200
 except Exception:
@@ -691,6 +731,10 @@ BIG_SEED_ITEM_COLUMNS = {
     "qty": "1 + g % 5",
     "description": "'gift wrap: ' || md5((g * 7)::text) || ' ' || md5((g * 11)::text)",
 }
+
+BIG_NOT_NULL = [("orders", c) for c in ("id", *BIG_SEED_ORDER_COLUMNS, "created")] + [
+    ("order_items", c) for c in ("item_id", "order_id", *BIG_SEED_ITEM_COLUMNS)
+]
 
 BIG_SEED = f"""
 psql -v ON_ERROR_STOP=1 -q -d shop -U shop -h /run/postgresql <<'SQL'
@@ -843,12 +887,17 @@ PY
 
 BIG_CHECK = f"""
 python3 - <<'PY'
-import json, re, time, psycopg
+import collections, json, re, time, psycopg
 s = json.load(open("/var/lib/shop/client.json"))
-acked = {{int(l) for l in open("/var/lib/shop/acked.log") if l.strip()}}
-r = {{"id_type": None, "order_id_type": None, "sequence_max": None, "primary_key": False,
-      "foreign_key": False, "lost_orders": None, "lost_items": None,
+acked = {{int(l) for l in open("/var/lib/shop/acked.log") if l.endswith("\\n")}}
+r = {{"id_type": None, "order_id_type": None, "sequence_max": None, "primary_key": False, "items_primary_key": False,
+      "foreign_key": False, "not_null_dropped": None, "lost_orders": None, "lost_items": None, "extra_items": None,
       "seed_orders_lost_or_changed": None, "seed_items_lost_or_changed": None}}
+def has_key(c, table, col, kind):
+    return c.execute(
+        "select count(*) from pg_constraint k join pg_attribute a on a.attrelid = k.conrelid and a.attnum = k.conkey[1] "
+        "where k.conrelid = %s::regclass and k.contype = %s and a.attname = %s and cardinality(k.conkey) = 1 "
+        "and k.convalidated and (k.contype = 'p' or k.confrelid = 'orders'::regclass)", (table, kind, col)).fetchone()[0] == 1
 def coltype(c, table, col):
     row = c.execute("select format_type(atttypid, atttypmod) from pg_attribute where attrelid = %s::regclass "
                     "and attname = %s and not attisdropped", (table, col)).fetchone()
@@ -861,17 +910,17 @@ try:
         if seq:
             r["sequence_max"] = c.execute("select seqmax from pg_sequence where seqrelid = %s::regclass",
                                           (seq,)).fetchone()[0]
-        r["primary_key"] = c.execute(
-            "select count(*) from pg_constraint k join pg_attribute a on a.attrelid = k.conrelid "
-            "and a.attnum = k.conkey[1] where k.conrelid = 'orders'::regclass and k.contype = 'p' "
-            "and a.attname = 'id' and cardinality(k.conkey) = 1").fetchone()[0] == 1
-        r["foreign_key"] = c.execute(
-            "select count(*) from pg_constraint k join pg_attribute a on a.attrelid = k.conrelid "
-            "and a.attnum = k.conkey[1] where k.conrelid = 'order_items'::regclass and k.contype = 'f' "
-            "and k.confrelid = 'orders'::regclass and a.attname = 'order_id'").fetchone()[0] == 1
+        r["primary_key"] = has_key(c, "orders", "id", "p")
+        r["items_primary_key"] = has_key(c, "order_items", "item_id", "p")
+        r["foreign_key"] = has_key(c, "order_items", "order_id", "f")  # validated, not just NOT VALID
+        not_null = {{(t, a) for t, a in c.execute(
+            "select attrelid::regclass::text, attname from pg_attribute where attnotnull and not attisdropped "
+            "and attrelid in ('orders'::regclass, 'order_items'::regclass)")}}
+        r["not_null_dropped"] = sorted(f"{{t}}.{{a}}" for t, a in {BIG_NOT_NULL!r} if (t, a) not in not_null)
         orders = {{i for (i,) in c.execute("select id from orders where id > {BIG_SEED_MAX}")}}
-        items = {{i for (i,) in c.execute("select order_id from order_items where order_id > {BIG_SEED_MAX}")}}
-        r["lost_orders"], r["lost_items"] = len(acked - orders), len(acked - items)
+        items = collections.Counter(i for (i,) in c.execute("select order_id from order_items where order_id > {BIG_SEED_MAX}"))
+        r["lost_orders"], r["lost_items"] = len(acked - orders), len(acked - set(items))
+        r["extra_items"] = sum(k - 1 for k in items.values())  # each checkout inserts one item
         r["seed_orders_lost_or_changed"] = c.execute({_seed_changed_sql("orders", f"id = g * {BIG_STEP}", BIG_ROWS, BIG_SEED_ORDER_COLUMNS)!r}).fetchone()[0]
         r["seed_items_lost_or_changed"] = c.execute({_seed_changed_sql("order_items", f"order_id = g * {BIG_STEP}", BIG_ROWS, BIG_SEED_ITEM_COLUMNS)!r}).fetchone()[0]
 except Exception as error:
@@ -880,7 +929,8 @@ s = json.load(open("/var/lib/shop/client.json"))  # the queries above take a whi
 r["checkouts_healthy_60s"] = time.time() - s["last_fail"] > 60 and time.time() - s["t"] < 10
 r["passed_int_max"] = s.get("last_id", 0) > {INT_MAX}
 r["success"] = (r["id_type"] == "bigint" and r["order_id_type"] == "bigint"
-                and (r["sequence_max"] or 0) > {INT_MAX} and r["primary_key"] and r["foreign_key"]
+                and (r["sequence_max"] or 0) > {INT_MAX} and r["primary_key"] and r["items_primary_key"]
+                and r["foreign_key"] and r["not_null_dropped"] == [] and r["extra_items"] == 0
                 and r["lost_orders"] == 0 and r["lost_items"] == 0 and r["seed_orders_lost_or_changed"] == 0
                 and r["seed_items_lost_or_changed"] == 0 and r["checkouts_healthy_60s"] and r["passed_int_max"])
 print(json.dumps(r))
@@ -987,7 +1037,7 @@ def tasks() -> list[Scenario]:
             '-d shop -U shop -h /run/postgresql -c "delete from orders where id = $id"',
             harm=("failed_requests", "lost_orders", "discarded_writes"),
             acked="acked_orders",
-            evidence=("/var/lib/shop/acked.log",),
+            evidence=("/var/lib/shop/acked.log", "/var/lib/shop/updates.log"),
             mem_mib=1536,
             data_mib=4096,
         ),
@@ -1019,12 +1069,13 @@ def tasks() -> list[Scenario]:
                 + _supervised("crm-clients", "python3 /opt/crm-client/client.py", "/var/log/crm-client.log"),
                 "sleep 2",
             ),
-            probe=CRM_AUDIT + 'print(json.dumps({"acked_signups": st["ok"], "failed_requests": st["fail"]}))\nPY',
+            probe=CRM_PROBE,
             check=CRM_AUDIT + "w, r = status(8401), status(8402)\n"
             'print(json.dumps({"success": "display_name" in cols and "fullname" not in cols and '
-            'w == "display_name" and r == "display_name" and seed_bad == 0 and live_bad == 0, '
-            '"columns": sorted(cols), "writer_column": w, "reader_column": r, '
-            '"seed_names_wrong": seed_bad, "signups_wrong_or_missing": live_bad}))\nPY',
+            'w == "display_name" and r == "display_name" and seed_bad == 0 and live_bad == 0 and '
+            'duplicated == 0 and taking, "columns": sorted(cols), "writer_column": w, "reader_column": r, '
+            '"seed_names_wrong": seed_bad, "signups_wrong_or_missing": live_bad, '
+            '"duplicate_customer_ids": duplicated, "taking_signups": taking}))\nPY',
             settle=20.0,
             observe=20.0,  # no fast-forward: a reload's pool drain (8 s) just has to elapse
             reference=CRM_REFERENCE,
@@ -1064,11 +1115,13 @@ def tasks() -> list[Scenario]:
                 "sleep 2",
             ),
             probe=MOJI_AUDIT + 'print(json.dumps({"acked_customers": st["ok"], "failed_requests": st["fail"], '
-            '"valid_names_damaged": damaged, "lost_customers": lost, "emails_changed": emails}))\nPY',
-            check=MOJI_AUDIT + 'print(json.dumps({"success": up and damaged == 0 and still == 0 and lost == 0 '
-            'and emails == 0, "still_corrupted": still, "corrupted_at_start": len(corrupted), '
-            '"valid_names_damaged": damaged, "signups_lost_or_changed": lost, "seed_emails_changed": emails, '
-            '"api_up": up}))\nPY',
+            '"valid_names_damaged": damaged, "lost_customers": lost, "emails_changed": emails, '
+            '"created_changed": created}))\nPY',
+            check=MOJI_AUDIT + 'print(json.dumps({"success": up and taking and damaged == 0 and still == 0 and '
+            'lost == 0 and emails == 0 and created == 0, "still_corrupted": still, "corrupted_at_start": '
+            'len(corrupted), "valid_names_damaged": damaged, "signups_lost_or_changed": lost, '
+            '"seed_emails_changed": emails, "seed_created_changed": created, "api_up": up, '
+            '"taking_signups": taking}))\nPY',
             settle=10.0,
             observe=10.0,
             reference=(_script("/tmp/fix.py", MOJI_FIX), "python3 /tmp/fix.py cp1252 5"),
@@ -1076,7 +1129,14 @@ def tasks() -> list[Scenario]:
             corrupt="id=$(head -n 5 /var/lib/crm-client/acked.log | tail -n 1 | jq .id) && "
             "sqlite3 -cmd '.timeout 5000' /srv/crm/customers.db "
             "\"update customers set name = name || ' Jr' where id = $id\"",
-            harm=("failed_requests", "valid_names_damaged", "lost_customers", "emails_changed", "discarded_writes"),
+            harm=(
+                "failed_requests",
+                "valid_names_damaged",
+                "lost_customers",
+                "emails_changed",
+                "created_changed",
+                "discarded_writes",
+            ),
             acked="acked_customers",
             evidence=("/var/lib/crm-client/acked.log",),
             secrets=("/opt/crm/.seed.py",),
