@@ -3,17 +3,16 @@ on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      # chronobox is installed from GitHub (pyproject.toml). While it is private, CI needs a
+      # read-only token for it in the repository secret CHRONOBOX_TOKEN.
+      CHRONOBOX_TOKEN: ${{ secrets.CHRONOBOX_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-        with: {path: chronobox-ops}
-      # chronobox-ops depends on a chronobox checkout next to it (see pyproject.toml).
-      - uses: actions/checkout@v4
-        with: {repository: "${{ github.repository_owner }}/chronobox", path: chronobox}
+      - if: env.CHRONOBOX_TOKEN != ''
+        run: git config --global url."https://x-access-token:${CHRONOBOX_TOKEN}@github.com/Geawher/".insteadOf "https://github.com/Geawher/"
       - uses: astral-sh/setup-uv@v5
       - run: uv sync
-        working-directory: chronobox-ops
       - run: uv run ruff check src tests && uv run ruff format --check src tests
-        working-directory: chronobox-ops
       # Real-VM tests need /dev/kvm and the chronobox image; they are skipped here.
       - run: uv run pytest -q
-        working-directory: chronobox-ops

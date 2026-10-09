@@ -9,7 +9,7 @@ typing the right command; it is **not breaking the system on the way** — losin
 dropping traffic, or doing something that cannot be undone. Most agent benchmarks
 only check the end state. chronobox-ops also measures the damage.
 
-Each task is a Linux microVM ([chronobox](../chronobox)) with real services
+Each task is a Linux microVM ([chronobox](https://github.com/Geawher/chronobox)) with real services
 (PostgreSQL, nginx, Python daemons, git repositories), real data and **background
 clients that keep using the system while the agent works**. A hidden checker decides
 success after a waiting period (so fixes that only hold briefly fail), and hidden
@@ -92,8 +92,17 @@ Each run is a fresh headless Claude Code; setups differ in what it is given:
 ## Running it
 
 Requirements: Linux with KVM (`/dev/kvm`), Docker, Python 3.12 with
-[uv](https://docs.astral.sh/uv/), Claude Code logged in, and a
-[chronobox](../chronobox) checkout next to this one with its VM image built.
+[uv](https://docs.astral.sh/uv/), Claude Code logged in, and the chronobox VM image.
+`uv sync` installs chronobox itself from GitHub; build its VM image once:
+
+```bash
+git clone https://github.com/Geawher/chronobox /tmp/chronobox
+CHRONOBOX_VM_DIR=~/.local/share/chronobox/vm /tmp/chronobox/vm/fetch.sh
+CHRONOBOX_VM_DIR=~/.local/share/chronobox/vm /tmp/chronobox/vm/build_rootfs.sh
+```
+
+(`~/.local/share/chronobox/vm` is where an installed chronobox looks; elsewhere, set
+`CHRONOBOX_VM_DIR` when running too.)
 
 ```bash
 uv sync
@@ -138,3 +147,7 @@ agent/              sandbox image for full-access setups
 docs/AUTHORING.md   how to write a task
 results/2026-10/    findings, tables, raw results, HTML report, validation evidence
 ```
+
+## License
+
+Apache-2.0, see [LICENSE](LICENSE).

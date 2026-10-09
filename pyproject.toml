@@ -3,6 +3,8 @@ name = "chronobox-ops"
 version = "0.1.0"
 description = "A benchmark of coding agents on live systems: did they solve the task, and what did they break on the way?"
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = ["chronobox"]
 
@@ -10,8 +12,8 @@ dependencies = ["chronobox"]
 chronobox-ops = "chronobox_ops.cli:main"
 
 [tool.uv.sources]
-# Local checkout next to this one; on GitHub, point this at the chronobox repository.
-chronobox = { path = "../chronobox", editable = true }
+# To develop both at once: uv add --editable ../chronobox (path to a local checkout).
+chronobox = { git = "https://github.com/Geawher/chronobox.git", branch = "main" }
 
 [dependency-groups]
 dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6"]

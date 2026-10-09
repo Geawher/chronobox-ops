@@ -125,19 +125,9 @@ wheels = [
 [[package]]
 name = "chronobox"
 version = "0.2.0"
-source = { editable = "../chronobox" }
+source = { git = "https://github.com/Geawher/chronobox.git?branch=main#bbe9ab62f4c6b0a72e295a84cf6b0b3d94182eee" }
 dependencies = [
     { name = "mcp" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "mcp", specifier = ">=2.3.0" }]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=8" },
-    { name = "pytest-asyncio", specifier = ">=0.24" },
-    { name = "ruff", specifier = ">=0.6" },
 ]
 
 [[package]]
@@ -156,7 +146,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "chronobox", editable = "../chronobox" }]
+requires-dist = [{ name = "chronobox", git = "https://github.com/Geawher/chronobox.git?branch=main" }]
 
 [package.metadata.requires-dev]
 dev = [
