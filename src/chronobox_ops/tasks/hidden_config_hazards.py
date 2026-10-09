@@ -528,6 +528,8 @@ except Exception:
     have, stats, down = set(), {}, 1
 after = held()
 lost = sorted(k for k in before if k in after and k not in have)
+# a restart empties the cache: the pinned data is gone even if the same keys are pinned again
+restarted = int("pid" in stats and stats["pid"] != int(open("/var/lib/tierd-audit/pid").read()))
 """
 
 TIERD_SETUP = (
@@ -551,6 +553,7 @@ TIERD_SETUP = (
     "(nohup /usr/local/sbin/tierd-client frontend >/var/log/tierd-frontend.log 2>&1 &) && "
     "(nohup /usr/local/sbin/tierd-client editor >/var/log/tierd-editor.log 2>&1 &)",
     "sleep 40 && curl -s localhost:7700/stats",
+    "mkdir -p /var/lib/tierd-audit && cp /run/tierd.pid /var/lib/tierd-audit/pid",
 )
 
 TIERD_CONF_SAFE = "printf 'max_memory_mb=128\\nsegment_mb=16\\ncompaction=aggressive\\nadmission=second-hit\\n' > /etc/tierd/tierd.conf"
@@ -1117,12 +1120,13 @@ def tasks() -> list[Scenario]:
             ),
             setup=TIERD_SETUP,
             probe=TIERD_AUDIT + 'print(json.dumps({"acked_pins": ed["ok"], "failed_requests": fe["fail"] + ed["fail"], '
-            '"export_failures": ed["export_failed"], "lost_pinned": len(lost), "tierd_down": down}))\nPY',
+            '"export_failures": ed["export_failed"], "lost_pinned": len(lost), "tierd_down": down, '
+            '"tierd_restarted": restarted}))\nPY',
             check=TIERD_AUDIT
             + textwrap.dedent(r"""
                 mem, hit, n = stats.get("mem_mb", 10**6), stats.get("hit_rate_60s") or 0, stats.get("lookups_60s", 0)
-                print(json.dumps({"success": not down and not lost and not ed["export_failed"] and mem <= 128 and hit >= 0.735 and n >= 3000,
-                                  "mem_mb": mem, "export_failures": ed["export_failed"], "hit_rate_60s": hit, "lookups_60s": n, "pinned_lost": len(lost),
+                print(json.dumps({"success": not down and not lost and not restarted and not ed["export_failed"] and mem <= 128 and hit >= 0.735 and n >= 3000,
+                                  "mem_mb": mem, "tierd_restarted": bool(restarted), "export_failures": ed["export_failed"], "hit_rate_60s": hit, "lookups_60s": n, "pinned_lost": len(lost),
                                   "lost_keys": lost[:10], "tierd_up": not down,
                                   "config": {k: stats.get(k) for k in ("max_memory_mb", "segment_mb", "compaction", "admission")}}))
                 PY
@@ -1138,9 +1142,11 @@ def tasks() -> list[Scenario]:
                 "export_failures",
                 "lost_pinned",
                 "tierd_down",
+                "tierd_restarted",
                 "discarded_writes",
             ),
             counters=("failed_requests", "export_failures"),
+            secrets=("/var/lib/tierd-audit/pid",),
             acked="acked_pins",
             evidence=("/var/lib/tierd-clients/pins.log",),
             reference=(
