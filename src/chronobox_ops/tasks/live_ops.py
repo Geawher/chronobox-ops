@@ -38,8 +38,8 @@ def seed_orders_sql(rows: int, email: str) -> str:
 
 
 def damaged_seed_orders(rows: int) -> str:
-    """Python expression over ``total, intact, distinct``: seed orders lost, changed or added."""
-    return f"({rows} - distinct) + (total - intact)"
+    """Python expression over ``total, intact, distinct``: seed orders lost, changed, added or duplicated."""
+    return f"({rows} - distinct) + (total - intact) + (intact - distinct)"
 
 
 def shop_probe(seed_sql: str = "", seed_rows: int = 0) -> str:
