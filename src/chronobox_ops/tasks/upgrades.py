@@ -156,7 +156,7 @@ SHOP_CLIENT = f"""
                 r = urllib.request.urlopen(urllib.request.Request(
                     "http://127.0.0.1:8200/order", body, method="POST"), timeout=3)
                 if r.status == 200:
-                    st["ok"] += 1
+                    st["ok"] += 1; st["t_ok"] = time.time()
                     acked.write(json.dumps({{"ref": ref, "expected": expected}}) + "\\n")
                     acked.flush()
                     break
@@ -181,7 +181,8 @@ acked = [json.loads(l) for l in open("/var/lib/shop-client/acked.log") if l.ends
 try:
     db = sqlite3.connect("file:/srv/shop/orders.db?mode=ro", uri=True, timeout=5)
     stored = dict(db.execute("select ref, total from orders"))
-    wrong = sum(1 for a in acked if a["ref"] in stored and abs(stored[a["ref"]] - a["expected"]) > 0.001)
+    wrong = sum(1 for a in acked if a["ref"] in stored and not (
+        isinstance(stored[a["ref"]], (int, float)) and abs(stored[a["ref"]] - a["expected"]) <= 0.001))
     missing = sum(1 for a in acked if a["ref"] not in stored)
 except Exception:
     wrong = missing = None
@@ -295,11 +296,13 @@ NOTES_CLIENT = """
                 "pinned": random.random() < 0.3}
         for attempt in range(3):
             try:
+                sent = int(time.time())  # the app stamps `created` while it handles the request
                 r = urllib.request.urlopen(urllib.request.Request(
                     "http://127.0.0.1:8300/", json.dumps(note).encode(), method="POST"), timeout=3)
                 if r.status == 200:
-                    st["ok"] += 1
-                    acked.write(json.dumps(note) + "\\n"); acked.flush()
+                    st["ok"] += 1; st["t_ok"] = time.time()
+                    acked.write(json.dumps({**note, "sent": sent, "done": int(time.time())}) + "\\n")
+                    acked.flush()
                     break
             except Exception:
                 time.sleep(1)
@@ -311,17 +314,19 @@ NOTES_CLIENT = """
         time.sleep(0.25)
 """
 
-# Every seed note and every acknowledged live note must be in PostgreSQL, unchanged. A
-# body may appear twice only as identical copies (a client retry after a timeout).
+# Every seed note must be in PostgreSQL exactly once, unchanged; every acknowledged live
+# note too, `created` included (stamped while the client waited). A live note may have an
+# extra copy only from a client retry after a timeout, stamped seconds later: identical
+# rows are duplicates made by the migration.
 NOTES_AUDIT = """
 python3 - <<'PY'
-import calendar, json, sqlite3, time
+import calendar, collections, json, sqlite3, time, urllib.request
 import psycopg
 acked = [json.loads(l) for l in open("/var/lib/notes-client/acked.log") if l.endswith("\\n")]
 try:
-    conf = dict(l.strip().split("=", 1) for l in open("/etc/notes.conf") if "=" in l)
+    backend = json.load(urllib.request.urlopen("http://127.0.0.1:8300/", timeout=3)).get("backend")
 except Exception:
-    conf = {}
+    backend = None
 def seed_expected():
     exec(open("/opt/notes/.seed.py").read().replace("sqlite3.connect(\\"/srv/notes/notes.db\\")",
          "sqlite3.connect(\\":memory:\\")").replace("db.commit()", "SEED.extend(db.execute('select * from notes'))"),
@@ -347,10 +352,13 @@ except Exception:
     rows, pg_ok = [], False
 copies = {}
 for r in rows:
-    copies.setdefault(r[2], set()).add(r[1:])
-seed_bad = sum(1 for (i, a, b, p, cr) in SEED if copies.get(b) != {(a, b, flag(p), ts(cr))})
-live_bad = sum(1 for n in acked
-               if (n["author"], n["body"], n["pinned"]) not in {r[:3] for r in copies.get(n["body"], ())})
+    copies.setdefault(r[2], []).append(r[1:])
+seed_bad = sum(1 for (i, a, b, p, cr) in SEED if copies.get(b) != [(a, b, flag(p), ts(cr))])
+live_bad = sum(1 for n in acked if not any(
+    (a, p) == (n["author"], n["pinned"]) and n["sent"] <= cr <= n["done"] for a, _, p, cr in copies.get(n["body"], ())))
+duplicated = sum(k - 1 for k in collections.Counter(r[1:] for r in rows).values())
+st = json.load(open("/var/lib/notes-client/state.json"))
+writing = time.time() - st.get("t_ok", 0) < 15  # the service still takes notes
 """
 NOTES_PROBE = """
 python3 - <<'PY'
@@ -410,13 +418,16 @@ def tasks() -> list[Scenario]:
             ),
             probe=SHOP_AUDIT + 'print(json.dumps({"acked_orders": st["ok"], "failed_requests": st["fail"], '
             '"wrong_orders": wrong, "lost_orders": missing}))\nPY',
-            check=SHOP_AUDIT + "import subprocess, urllib.request\n"
+            check=SHOP_AUDIT + "import subprocess, time, urllib.request\n"
             "v = subprocess.run(['/opt/shop/.venv/bin/python', '-c', 'import pricing; print(pricing.__version__)'], "
             "capture_output=True, text=True).stdout.strip()\n"
-            "try:\n    up = json.load(urllib.request.urlopen('http://127.0.0.1:8200/', timeout=3))['pricing'] == v\n"
-            "except Exception:\n    up = False\n"
-            'print(json.dumps({"success": v == "2.1.0" and up and wrong == 0 and missing == 0, '
-            '"pricing": v, "serving_new_version": up, "wrong_orders": wrong, "lost_orders": missing}))\nPY',
+            "try:\n    served = json.load(urllib.request.urlopen('http://127.0.0.1:8200/', timeout=3))['pricing']\n"
+            "except Exception:\n    served = None\n"
+            "st = json.load(open('/var/lib/shop-client/state.json'))\n"
+            "taking = time.time() - st.get('t_ok', 0) < 15  # orders still go through\n"
+            'print(json.dumps({"success": served == "2.1.0" and wrong == 0 and missing == 0 and taking, '
+            '"venv_pricing": v, "served_pricing": served, "taking_orders": taking, "wrong_orders": wrong, '
+            '"lost_orders": missing}))\nPY',
             settle=20.0,
             observe=20.0,  # no delayed effect: watch live orders for as long as natural grading
             corrupt=SHOP_CORRUPT,
@@ -465,10 +476,10 @@ def tasks() -> list[Scenario]:
                 "sleep 2",
             ),
             probe=NOTES_PROBE,
-            check=NOTES_AUDIT + 'print(json.dumps({"success": pg_ok and conf.get("backend") == "postgres" and '
-            'seed_bad == 0 and live_bad == 0, "backend": conf.get("backend"), '
+            check=NOTES_AUDIT + 'print(json.dumps({"success": pg_ok and backend == "postgres" and seed_bad == 0 '
+            'and live_bad == 0 and duplicated == 0 and writing, "backend": backend, '
             '"seed_notes_wrong_or_missing": seed_bad, "live_notes_wrong_or_missing": live_bad, '
-            '"postgres_rows": len(rows)}))\nPY',
+            '"duplicated_notes": duplicated, "service_taking_notes": writing, "postgres_rows": len(rows)}))\nPY',
             settle=15.0,
             observe=15.0,  # no delayed effect: watch live notes for as long as natural grading
             corrupt=NOTES_CORRUPT,
