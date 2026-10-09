@@ -977,7 +977,8 @@ def tasks() -> list[Scenario]:
                     a_fenced = a["readonly"] or a["role"] != "primary"
                 except Exception:
                     a_fenced = True  # stopped
-                print(json.dumps({"success": backend == "127.0.0.1:7402" and b_ok and a_fenced and lost == 0
+                on_b = backend in ("127.0.0.1:7402", "localhost:7402")
+                print(json.dumps({"success": on_b and b_ok and a_fenced and lost == 0
                                   and lost_seed == 0, "router_backend": backend, "kv_b_writable_primary": b_ok,
                                   "kv_a_fenced": a_fenced, "lost_acked_writes": lost, "lost_seed_keys": lost_seed}))
                 PY
