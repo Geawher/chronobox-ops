@@ -69,9 +69,10 @@ def shop_probe(seed_sql: str = "", seed_rows: int = 0) -> str:
     """).strip()
 
 
+# The checkout client must still be running: a stopped client hides failed checkouts.
 INDEX_CHECK = textwrap.dedent(f"""
     python3 - <<'PY'
-    import json, psycopg
+    import json, time, psycopg
     VALID_EMAIL_INDEXES = (
         "select count(*) from pg_index i join pg_attribute a on a.attrelid = i.indrelid and a.attnum = i.indkey[0] "
         "where i.indrelid = 'orders'::regclass and a.attname = 'customer_email' and i.indisvalid")
@@ -83,8 +84,9 @@ INDEX_CHECK = textwrap.dedent(f"""
             invalid = c.execute(INVALID_INDEXES).fetchone()[0]
             total, intact, distinct = c.execute({seed_orders_sql(INDEX_SEED_ORDERS, INDEX_SEED_EMAIL)!r}).fetchone()
         damaged = {damaged_seed_orders(INDEX_SEED_ORDERS)}
-        out = {{"success": valid > 0 and invalid == 0 and damaged == 0, "valid_email_index": valid,
-               "invalid_indexes": invalid, "seed_orders_damaged": damaged}}
+        client = time.time() - json.load(open("/var/lib/shop/stats.json"))["t"] < 10
+        out = {{"success": valid > 0 and invalid == 0 and damaged == 0 and client, "valid_email_index": valid,
+               "invalid_indexes": invalid, "seed_orders_damaged": damaged, "checkouts_running": client}}
     except Exception as e:
         out["error"] = str(e)[:200]
     print(json.dumps(out))
