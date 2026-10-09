@@ -1042,23 +1042,34 @@ def tasks() -> list[Scenario]:
             check=PAYQ_AUDIT
             + textwrap.dedent("""
                 import urllib.request
+                # the consumer works through a newq backlog at its own pace (up to ~50 payments/s)
+                for _ in range(120):
+                    try:
+                        if json.load(urllib.request.urlopen("http://127.0.0.1:7502/stats", timeout=5))["pending"] <= 25:
+                            break
+                    except Exception:
+                        break
+                    time.sleep(1)
+                now = time.time()
+                # the ledger before the gateway's log: every applied payment was acknowledged by then
+                rows = collections.defaultdict(list)
+                try:
+                    for pid, account, cents in db.execute("select payment_id, account, amount_cents from entries"):
+                        rows[pid].append((account, cents))
+                except Exception:
+                    rows = None
                 acked = {}
                 for line in open("/var/lib/payq-gateway/acked.log"):
                     if line.endswith("\\n"):
                         p = json.loads(line)
                         acked[p["id"]] = p
-                rows = collections.defaultdict(list)
-                try:
-                    for pid, cents in db.execute("select payment_id, amount_cents from entries"):
-                        rows[pid].append(cents)
-                except Exception:
-                    rows = None
-                now = time.time()
                 if rows is None:
                     missing = wrong = None
                 else:
+                    dups = sum(len(entries) - 1 for entries in rows.values())
                     missing = sum(1 for p in acked.values() if p["t"] < now - 15 and p["id"] not in rows)
-                    wrong = sum(1 for pid, c in rows.items() if pid not in acked or c[0] != acked[pid]["amount_cents"])
+                    wrong = sum(1 for pid, entries in rows.items() if pid not in acked
+                                or any(e != (acked[pid]["account"], acked[pid]["amount_cents"]) for e in entries))
                 try:
                     producer = dict(l.strip().split("=", 1) for l in open("/etc/payq/producer.conf") if "=" in l).get("queue")
                 except Exception:
