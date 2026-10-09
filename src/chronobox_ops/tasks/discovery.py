@@ -24,7 +24,8 @@ def seed_rows():
         amount = f"{cents // 100}.{cents % 100:02d}"
         if rng.random() < 0.03:
             amount = amount.replace(".", ",")  # entries imported from a European branch
-        rows.append((i, f"acct-{rng.randint(1, 400)}", amount, f"seed-{i}", cents))
+        created = f"2024-{1 + i * 12 // 20001:02d}-{1 + i % 28:02d} {i % 24:02d}:{i % 60:02d}:{i * 7 % 60:02d}"
+        rows.append((i, f"acct-{rng.randint(1, 400)}", amount, f"seed-{i}", created, cents))
     return rows
 """
 
@@ -49,11 +50,12 @@ LEDGER_PROBE = textwrap.dedent("""
     PY
 """).strip()
 
-# Every seed row must keep its id, account, memo and amount; every acknowledged client
-# entry (memo account amount in acked.log) must be stored with its account and amount.
+# Every seed row must be stored once, with its id, account, memo, amount and creation time;
+# every acknowledged client entry (memo account amount in acked.log) must be stored once,
+# with its account and amount; every entry keeps a unique id.
 LEDGER_CHECK = textwrap.dedent("""
     python3 - <<'PY'
-    import json, sqlite3, sys, urllib.request
+    import collections, json, sqlite3, sys, urllib.request
     sys.path.insert(0, "/opt/ledger")
     from seed import seed_rows
     def cents(amount):
@@ -71,27 +73,34 @@ LEDGER_CHECK = textwrap.dedent("""
         v = db.execute("select value from meta where key='schema_version'").fetchone()[0]
         cols = [r[1] for r in db.execute("pragma table_info(entries)")]
         col = "amount_cents" if "amount_cents" in cols else "amount"
-        rows = {r[0]: r[1:] for r in db.execute(f"select id, account, memo, {col} from entries")}
-        missing = wrong = 0
-        for id_, account, _, memo, amount_cents in seed_rows():
+        all_rows = db.execute(f"select id, account, memo, {col}, created from entries").fetchall()
+        ids = collections.Counter(r[0] for r in all_rows)
+        bad_ids = ids[None] + sum(n - 1 for i, n in ids.items() if i is not None and n > 1)
+        rows = {r[0]: r[1:] for r in all_rows}
+        memos = collections.Counter(r[2] for r in all_rows)
+        missing = wrong = duplicated = 0
+        for id_, account, _, memo, created, amount_cents in seed_rows():
+            duplicated += max(0, memos[memo] - 1)
             if id_ not in rows:
                 missing += 1
-            elif v == "2" and rows[id_] != (account, memo, amount_cents):
+            elif v == "2" and rows[id_] != (account, memo, amount_cents, created):
                 wrong += 1
-        stored = {}
-        for account, memo, value in rows.values():
-            if str(memo).startswith("app-"):
-                stored.setdefault(memo, set()).add((account, value))
+        stored = collections.Counter((memo, account, value) for _, account, memo, value, _ in all_rows
+                                     if str(memo).startswith("app-"))
+        want = collections.Counter((memo, account, cents(amount) if col == "amount_cents" else amount)
+                                   for memo, account, amount in acked)
         lost = changed = 0
-        for memo, account, amount in acked:
-            expected = cents(amount) if col == "amount_cents" else amount
-            if memo not in stored:
-                lost += 1
-            elif (account, expected) not in stored[memo]:
-                changed += 1
-        ok = v == "2" and missing == wrong == lost == changed == 0 and alive
+        for entry, n in want.items():
+            if stored[entry] < n:
+                if memos[entry[0]] == 0:
+                    lost += n - stored[entry]
+                else:
+                    changed += n - stored[entry]
+            duplicated += max(0, stored[entry] - n)
+        ok = v == "2" and missing == wrong == lost == changed == duplicated == bad_ids == 0 and alive
         result = {"success": ok, "schema": v, "seed_missing": missing, "seed_wrong": wrong,
-                  "app_entries_lost": lost, "app_entries_changed": changed, "ledgerd_up": alive}
+                  "app_entries_lost": lost, "app_entries_changed": changed, "duplicated": duplicated,
+                  "bad_ids": bad_ids, "ledgerd_up": alive}
     except Exception as error:
         result["error"] = repr(error)
     print(json.dumps(result))
@@ -157,8 +166,8 @@ def tasks() -> list[Scenario]:
                     db.execute("insert into meta values ('schema_version', '1')")
                     db.execute("create table entries(id integer primary key, account text, "
                                "amount text, memo text, created text default current_timestamp)")
-                    db.executemany("insert into entries(id, account, amount, memo) values (?,?,?,?)",
-                                   [r[:4] for r in seed_rows()])
+                    db.executemany("insert into entries(id, account, amount, memo, created) values (?,?,?,?,?)",
+                                   [r[:5] for r in seed_rows()])
                     db.commit()
                     """,
                 ),
