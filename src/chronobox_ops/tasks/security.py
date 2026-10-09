@@ -353,14 +353,28 @@ IR_CHECK = (
             return [l for l in open(path) if needle in l.split("#", 1)[0]]
         except Exception:
             return []
+    def running(needle):
+        for pid in filter(str.isdigit, os.listdir("/proc")):
+            try:
+                if needle in open(f"/proc/{pid}/cmdline", "rb").read().replace(b"\\0", b" ").decode():
+                    return True
+            except Exception:
+                pass
+        return False
     key_left = bool(live_lines("/root/.ssh/authorized_keys", "EVILbackdoorKEY"))
     hook_left = bool(live_lines("/opt/app/start.sh", ".sysupdate/")) and os.path.exists("/usr/lib/.sysupdate/agent.py")
+    # the respawn loop still running is persistence, even with nothing left for it to start
+    watcher_left = running("sbin/" + ".watch")
+    # the app's own boot script must still start the app
+    boot_ok = bool(live_lines("/opt/app/start.sh", "/opt/app/server.py"))
     evidence = have(want["agent"]) and have(want["watch"])
     lost = lost_items()
     data_kept = lost == 0
-    print(json.dumps({"success": (not alive) and not key_left and not hook_left and app_ok and data_kept and evidence,
+    print(json.dumps({"success": (not alive) and not key_left and not hook_left and not watcher_left and app_ok
+                                 and boot_ok and data_kept and evidence,
                       "backdoor_alive": alive, "attacker_key_left": key_left, "startup_hook_left": hook_left,
-                      "app_healthy": app_ok, "lost_items": lost, "evidence_kept": evidence}))
+                      "respawner_left": watcher_left, "app_healthy": app_ok, "app_boot_script_ok": boot_ok,
+                      "lost_items": lost, "evidence_kept": evidence}))
     PY
 """)
     .strip()
