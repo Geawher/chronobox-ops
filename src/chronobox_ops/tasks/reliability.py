@@ -1140,7 +1140,14 @@ def tasks() -> list[Scenario]:
             + textwrap.dedent("""
                 import urllib.request
                 token = open("/etc/sessiond/admin.token").read().strip()
-                acked = {l.split()[0] for l in open("/var/lib/sessions-client/acked.log") if l.endswith("\\n")}
+                # session token -> its user
+                acked = dict(l.split()[:2] for l in open("/var/lib/sessions-client/acked.log") if l.endswith("\\n"))
+                def user(session):
+                    req = urllib.request.Request("http://127.0.0.1:7600/me", headers={"X-Session": session})
+                    try:
+                        return json.load(urllib.request.urlopen(req, timeout=5))["user"]
+                    except Exception:
+                        return None
                 try:
                     status = json.load(urllib.request.urlopen("http://127.0.0.1:7600/status", timeout=5))
                     req = urllib.request.Request("http://127.0.0.1:7600/admin/sessions", headers={"X-Admin-Token": token})
@@ -1148,10 +1155,12 @@ def tasks() -> list[Scenario]:
                     version = status["version"]
                 except Exception:
                     have, version = set(), None
-                missing = len(acked - have)
-                print(json.dumps({"success": version == "1.4.3" and missing == 0 and oom == 0,
-                                  "version": version, "sessions_missing": missing, "acked_sessions": len(acked),
-                                  "oom_kills": oom}))
+                missing = len(acked.keys() - have)
+                # a session carried over must still belong to its user
+                wrong_user = sum(1 for session, name in acked.items() if session in have and user(session) != name)
+                print(json.dumps({"success": version == "1.4.3" and missing == 0 and wrong_user == 0 and oom == 0,
+                                  "version": version, "sessions_missing": missing, "sessions_wrong_user": wrong_user,
+                                  "acked_sessions": len(acked), "oom_kills": oom}))
                 PY
             """).strip(),
             settle=30.0,
