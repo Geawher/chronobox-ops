@@ -37,3 +37,12 @@ def test_a_copy_keeps_the_damage_so_far_and_starts_its_own_baseline() -> None:
     copy.record(7, {"acked": 150, "failed": 4})  # the copy's first reading is its baseline
     copy.record(7, {"acked": 170, "failed": 6})
     assert copy.damage == {"failed": 6.0} and ledger.damage == {"failed": 4.0}
+
+
+def test_a_counter_missing_from_one_reading_is_not_counted_twice() -> None:
+    ledger = DamageLedger(TASK)
+    ledger.record(1, {"acked": 10, "failed": 5})
+    ledger.record(1, {"acked": 12, "failed": 7})
+    ledger.record(1, {"acked": 14})  # the counter could not be read this time
+    ledger.record(1, {"acked": 16, "failed": 8})
+    assert ledger.damage == {"failed": 3.0} and ledger.readings == 4

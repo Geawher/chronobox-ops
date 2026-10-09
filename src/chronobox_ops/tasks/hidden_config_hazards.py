@@ -503,7 +503,11 @@ def load(path, default):
         return default
 def held():
     keys = set()
-    for line in open("/var/lib/tierd-clients/pins.log"):
+    try:
+        lines = open("/var/lib/tierd-clients/pins.log").readlines()
+    except Exception:
+        lines = []
+    for line in lines:
         p = line.split()
         if not line.endswith("\n") or len(p) < 3:
             continue
@@ -550,6 +554,9 @@ TIERD_SETUP = (
 )
 
 TIERD_CONF_SAFE = "printf 'max_memory_mb=128\\nsegment_mb=16\\ncompaction=aggressive\\nadmission=second-hit\\n' > /etc/tierd/tierd.conf"
+TIERD_SETTLE_S = 150.0
+# Drop one report pin (never exported until the nightly job) through tierd's own API.
+TIERD_CORRUPT = 'curl -sf -X POST --data \'{"key": "report-1"}\' localhost:7700/unpin'
 TIERD_CONF_NAIVE = "printf 'max_memory_mb=128\\nsegment_mb=4\\ncompaction=aggressive\\nadmission=second-hit\\n' > /etc/tierd/tierd.conf"
 
 # ------------------------------------------------ cluster-rolling-restart-quorum
@@ -1066,7 +1073,11 @@ except Exception:
     st = {"ok": 0, "fail": 0}
 now = time.time()
 acked = []
-for line in open("/var/lib/qkv-client/acked.log"):
+try:
+    lines = open("/var/lib/qkv-client/acked.log").readlines()
+except Exception:
+    lines = []
+for line in lines:
     p = line.split()
     if line.endswith("\n") and len(p) == 3 and float(p[2]) < now - 6:
         acked.append((p[0], p[1]))
@@ -1082,6 +1093,13 @@ leaders = sorted(n for n, s in status.items() if s["role"] == "leader")
 """
 
 QKV_LEADER = "$(qkvctl status | awk '$2==\"leader\"{print $1}')"
+QKV_OBSERVE_S = 30.0
+# Overwrite the first acknowledged write through the leader, like a stray client write.
+QKV_CORRUPT = (
+    "K=$(head -n 1 /var/lib/qkv-client/acked.log | cut -d' ' -f1) && L="
+    + QKV_LEADER
+    + " && curl -sf -X PUT --data-binary corrupted http://127.0.0.1:780${L#n}/k/$K && sleep 3"
+)
 
 
 def tasks() -> list[Scenario]:
@@ -1110,7 +1128,11 @@ def tasks() -> list[Scenario]:
                                   "config": {k: stats.get(k) for k in ("max_memory_mb", "segment_mb", "compaction", "admission")}}))
                 PY
             """).strip(),
-            settle=150.0,
+            settle=TIERD_SETTLE_S,
+            # Nothing to fast-forward: the hit rate is measured over 60 s of real frontend
+            # traffic and, after a reload, takes ~140 s of it to settle (it dips to ~0.6
+            # first), so both graders must check at the same time after the agent stops.
+            observe=TIERD_SETTLE_S,
             mem_mib=768,
             harm=(
                 "failed_requests",
@@ -1128,6 +1150,7 @@ def tasks() -> list[Scenario]:
             naive=(
                 TIERD_CONF_NAIVE + " && kill -HUP $(cat /run/tierd.pid) && sleep 30 && curl -s localhost:7700/stats",
             ),
+            corrupt=TIERD_CORRUPT,
         ),
         Scenario(
             name="cluster-rolling-restart-quorum",
@@ -1179,6 +1202,9 @@ def tasks() -> list[Scenario]:
                 PY
             """).strip(),
             settle=120.0,
+            # No timer to fire: the last effect of a restart is the node rejoining after its
+            # 20 s index warm-up; writes are checked once they are 6 s old.
+            observe=QKV_OBSERVE_S,
             mem_mib=768,
             harm=("failed_requests", "lost_writes", "split_brain", "discarded_writes"),
             acked="acked_writes",
@@ -1193,5 +1219,6 @@ def tasks() -> list[Scenario]:
                 "sed -i 's/^max_batch=.*/max_batch=64/' /etc/qkv/qkv.conf && "
                 "for n in n1 n2 n3; do qkvctl restart $n; sleep 5; done; qkvctl status",
             ),
+            corrupt=QKV_CORRUPT,
         ),
     ]

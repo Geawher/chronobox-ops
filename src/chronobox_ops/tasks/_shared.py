@@ -62,21 +62,6 @@ SHOP_SCHEMA = (
     'created timestamptz default now()); alter table orders owner to shop;"'
 )
 
-SHOP_PROBE = textwrap.dedent("""
-    python3 - <<'PY'
-    import json, psycopg
-    s = json.load(open("/var/lib/shop/stats.json"))
-    try:
-        with psycopg.connect("dbname=shop user=shop host=/run/postgresql", connect_timeout=2) as c:
-            c.execute("set statement_timeout = 3000")
-            stored = c.execute("select count(*) from orders where source='app'").fetchone()[0]
-        lost = max(0, s["ok"] - stored)
-    except Exception:
-        lost = None
-    print(json.dumps({"failed_requests": s["fail"], "lost_orders": lost, "acked_orders": s["ok"]}))
-    PY
-""").strip()
-
 
 def python_service(path: str, code: str) -> str:
     return f"mkdir -p {path.rsplit('/', 1)[0]} && cat > {path} <<'PY'\n{textwrap.dedent(code).strip()}\nPY"

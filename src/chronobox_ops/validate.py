@@ -75,6 +75,8 @@ class Attempt:
     tampering: list[str] = field(default_factory=list)
     failed_steps: list[str] = field(default_factory=list)
     check: dict[str, Any] = field(default_factory=dict)
+    probe_readings: int = 0
+    fast_forward: dict[str, Any] | None = None
     other_grade: dict[str, Any] | None = None
     fix_s: float = 0.0
     total_s: float = 0.0
@@ -85,6 +87,8 @@ class Attempt:
         if self.error:
             return [f"{self.mode}: error: {self.error}"]
         found = []
+        if self.probe_readings == 0:
+            found.append(f"{self.mode}: the probe never produced a reading (damage would go unseen)")
         if self.mode in MUST_SUCCEED:
             if self.solved_at_start:
                 found.append("the check passes before any fix")
@@ -176,11 +180,13 @@ def _graded(result: Attempt, task: Scenario, report: dict[str, Any]) -> None:
     result.forbidden_harm = reward["forbidden_harm"]
     result.harm = harm.discarded_writes + harm.failed_requests + harm.other
     result.damage, result.tampering, result.check = report["damage"], report["tampering"], report["check"]
+    result.probe_readings, result.fast_forward = report["probe_readings"], report["fast_forward"]
     other = report.get("other_grade")
     if other is not None:
         other_reward = _reward(task, other)
         result.other_grade = {"grade": other["grade"], "success": other_reward["success"], "check": other["check"],
-                              "forbidden_harm": other_reward["forbidden_harm"]}  # fmt: skip
+                              "forbidden_harm": other_reward["forbidden_harm"], "damage": other["damage"],
+                              "fast_forward": other["fast_forward"]}  # fmt: skip
 
 
 def _reward(task: Scenario, report: dict[str, Any]) -> dict[str, Any]:

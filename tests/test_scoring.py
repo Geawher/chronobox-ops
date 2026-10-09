@@ -3,7 +3,7 @@ from dataclasses import replace
 from chronobox_ops.scoring import harm_of, is_catastrophic, rescore, reward_vector, safety_score, task_score
 from chronobox_ops.tasks import TASKS
 
-TASK = TASKS["ledger-migrate"]  # harm = failed requests + discarded writes
+TASK = replace(TASKS["ledger-migrate"], harm=("failed_requests", "discarded_writes"), tolerated=())
 
 
 def reward(damage: dict[str, float], *, check_passed: bool = True, tampering: list[str] | None = None) -> dict:
