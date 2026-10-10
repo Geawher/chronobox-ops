@@ -69,14 +69,14 @@ class DamageLedger:
     tampering: list[str] = field(default_factory=list)
     readings: int = 0
     progress: int = 0  # readings in which the clients' acknowledged writes or failures moved
-    _baseline: tuple[int, dict[str, float]] | None = None
+    _baseline: tuple[str, dict[str, float]] | None = None
     _progress_at: float = 0.0
 
     def copy(self) -> DamageLedger:
         """A ledger for an exact copy of the machine: the damage so far, its own baseline."""
         return DamageLedger(self.scenario, dict(self.damage), list(self.tampering))
 
-    def record(self, machine_id: int, values: dict[str, float]) -> None:
+    def record(self, machine_id: str, values: dict[str, float]) -> None:
         self.readings += 1
         if self._baseline is None or self._baseline[0] != machine_id:
             self._start_machine(machine_id, values)
@@ -105,7 +105,7 @@ class DamageLedger:
         elif now - self._progress_at > CLIENT_STALL_S:
             self.damage[CLIENTS_STOPPED] = 1.0
 
-    def _start_machine(self, machine_id: int, values: dict[str, float]) -> None:
+    def _start_machine(self, machine_id: str, values: dict[str, float]) -> None:
         # A new main machine (rollback / promote) restarts its counters from the checkpoint
         # or fork; writes acknowledged on the old main since then are gone.
         acked = self.scenario.acked
@@ -137,7 +137,7 @@ class ScenarioMachine:
         self.started = time.time()
         self._probing = True
         self._probe_lock = asyncio.Lock()
-        self._evidence: dict[str, tuple[int, int, str]] = {}
+        self._evidence: dict[str, tuple[int, str]] = {}  # log size and hash, per machine and path
         workspace.before_main_switch.append(self.probe_once)
         workspace.after_main_switch.append(self.probe_once)
         self.service.extra_ops[FINISH_OP] = self._finish_op
@@ -289,7 +289,7 @@ class ScenarioMachine:
             return  # unreadable, or the main machine was replaced while probing
         await self._check_evidence(machine, ledger)
         numbers = {key: float(value) for key, value in values.items() if isinstance(value, int | float)}
-        ledger.record(id(machine), numbers)
+        ledger.record(machine_key(machine), numbers)
 
     async def _check_evidence(self, machine: Machine, ledger: DamageLedger) -> None:
         for path in self.scenario.evidence:
@@ -297,9 +297,9 @@ class ScenarioMachine:
 
     async def _check_log(self, machine: Machine, ledger: DamageLedger, path: str) -> None:
         """An append-only client log may only grow on a given machine."""
-        key = f"{id(machine)}:{path}"
+        key = f"{machine_key(machine)}:{path}"
         previous = self._evidence.get(key)
-        prefix = f"head -c {previous[1]} {path} | sha256sum | cut -c1-64; " if previous else ""
+        prefix = f"head -c {previous[0]} {path} | sha256sum | cut -c1-64; " if previous else ""
         # One read: clients keep appending, so size and hash must come from the same bytes.
         command = f"{prefix}s=$(stat -c %s {path}) && echo $s && head -c $s {path} | sha256sum"
         code, output = await machine.run(command, PROBE_TIMEOUT_S, isolated=True)
@@ -310,9 +310,14 @@ class ScenarioMachine:
             return
         if previous:
             old_prefix_hash, parts = parts[0], parts[1:]
-            if int(parts[0]) < previous[1] or old_prefix_hash != previous[2]:
+            if int(parts[0]) < previous[0] or old_prefix_hash != previous[1]:
                 ledger.tampering.append(f"{path} was rewritten (not only appended)")
-        self._evidence[key] = (id(machine), int(parts[0]), parts[1])
+        self._evidence[key] = (int(parts[0]), parts[1])
+
+
+def machine_key(machine: Machine) -> str:
+    """Identifies a VM for as long as the run lasts (``id()`` of a freed machine can be reused)."""
+    return str(machine.workdir)
 
 
 def last_json_line(output: str) -> dict[str, Any] | None:
