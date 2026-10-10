@@ -697,10 +697,13 @@ MOJI_FIX = """
 # ============================================================= pg-int-to-bigint
 
 INT_MAX = 2**31 - 1
-BIG_ROWS = 2_000_000
-BIG_STEP = 1073  # seed ids are spread out: the id space was allocated in blocks
+# Big enough that rewriting either table under an ACCESS EXCLUSIVE lock (a plain ALTER ...
+# TYPE bigint) takes far longer than a checkout's retries (~3.6 s): the naive fix fails
+# reliably, even run one table at a time.
+BIG_ROWS = 4_000_000
+BIG_STEP = 509  # seed ids are spread out: the id space was allocated in blocks
 BIG_SEED_MAX = BIG_ROWS * BIG_STEP
-BIG_MARGIN = 3000  # ~5 minutes of checkouts at 10/s
+BIG_MARGIN = 6000  # ~10 minutes of checkouts at 10/s
 assert BIG_SEED_MAX < INT_MAX - BIG_MARGIN
 BIG_FAST_FORWARD_LEFT = 30  # ids left before INT_MAX after the fast-forward: ~3 s of checkouts
 # Seed rows as functions of g (order id = g * BIG_STEP); the app never changes them.
@@ -1148,14 +1151,12 @@ def tasks() -> list[Scenario]:
             ),
             probe=BIG_PROBE,
             check=BIG_CHECK,
-            settle=360.0,
+            settle=720.0,  # checkouts reach INT_MAX ~10 minutes after setup
             fast_forward=BIG_FAST_FORWARD,
             observe=20.0,  # the checkouts cross INT_MAX ~3 s after the fast-forward
             reference=(BIG_REFERENCE, "python3 /tmp/widen.py"),
-            # One transaction: orders stays locked through both table rewrites (~6 s), longer
-            # than a checkout's retries (~3.6 s). Each rewrite alone (~3 s) sometimes fits in them.
             naive=(
-                "psql -1 -v ON_ERROR_STOP=1 -d shop -U shop -h /run/postgresql "
+                "psql -v ON_ERROR_STOP=1 -d shop -U shop -h /run/postgresql "
                 "-c 'alter table orders alter column id type bigint' "
                 "-c 'alter table order_items alter column order_id type bigint' "
                 "-c 'alter sequence orders_id_seq as bigint'",
@@ -1167,6 +1168,6 @@ def tasks() -> list[Scenario]:
             acked="acked_orders",
             evidence=("/var/lib/shop/acked.log",),
             mem_mib=1536,
-            data_mib=4096,
+            data_mib=6144,
         ),
     ]
