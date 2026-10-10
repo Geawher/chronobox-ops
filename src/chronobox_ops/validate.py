@@ -39,7 +39,7 @@ from chronobox_ops.harness.machine import (
 )
 from chronobox_ops.harness.scheduler import MemoryScheduler
 from chronobox_ops.scenario import Scenario
-from chronobox_ops.scoring import harm_of, report_reward
+from chronobox_ops.scoring import counted_damage, report_reward
 from chronobox_ops.tasks import TASKS
 
 STEP_TIMEOUT_S = 900.0
@@ -183,10 +183,9 @@ def _graded(result: Attempt, task: Scenario, report: dict[str, Any]) -> None:
         result.error = report.get("error", "no report")
         return
     reward = report_reward(task, report)
-    harm = harm_of(task, report["damage"])
     result.success, result.check_passed = reward["success"], reward["check_passed"]
     result.forbidden_harm = reward["forbidden_harm"]
-    result.harm = harm.discarded_writes + harm.failed_requests + harm.other
+    result.harm = sum(counted_damage(task, report["damage"]).values())
     result.damage, result.tampering, result.check = report["damage"], report["tampering"], report["check"]
     result.probe_readings, result.fast_forward = report["probe_readings"], report["fast_forward"]
     other = report.get("other_grade")

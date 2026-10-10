@@ -2,7 +2,7 @@
 
 A task is a small, realistic operations / engineering job on a **live machine**:
 real services, real data, background clients that keep using the system while the
-agent works. It is scored by hidden commands the agent never sees. Everything must
+agent works. It is judged by hidden commands the agent never sees. Everything must
 work **offline** (the VM has no internet).
 
 ## The contract
@@ -25,7 +25,7 @@ Scenario(
     naive=(...),                     # the obvious-but-wrong solution; must NOT succeed
     corrupt="...",                   # validation-only: harm ONE piece of user data; must be caught
     harm=("failed_requests", ...),   # probe keys that count as damage (empty = all keys)
-    tolerated=(),                    # harm keys the prompt does not forbid (lower score only)
+    tolerated=(),                    # harm keys the prompt does not forbid (reported, not failing)
     counters=("failed_requests",),   # probe keys that are monotonic counters; others are levels
     acked="acked_writes",            # probe key: writes clients were told succeeded (optional)
     evidence=("/var/lib/x/acked.log",),  # append-only client logs (tamper check)

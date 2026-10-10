@@ -27,9 +27,6 @@ SETUP_LABELS = {
     "full-alone": "Full Claude Code · alone",
     "full-chronobox": "Full Claude Code · chronobox",
 }
-INTERACTIVE = frozenset(SETUP_ORDER) - {"single-shot"}
-STRONG_FAMILIES = ("sonnet", "opus")
-WORST_SHARE = 0.1
 
 
 def load(sources: Iterable[Path]) -> list[dict[str, Any]]:
@@ -66,15 +63,19 @@ def _stored(source: Path) -> Iterable[tuple[dict[str, Any], Path | None]]:
 
 @dataclass(frozen=True)
 class Cell:
-    """Aggregate of a group of runs."""
+    """Aggregate of a group of runs: verdicts, then each kind of damage as runs affected."""
 
     runs: int
     successes: int
     checks_passed: int
-    score: float
-    safety: float
-    catastrophic: int
-    worst_safety: float
+    harmed: int
+    failed_request_runs: int
+    failed_requests: float
+    discarded_write_runs: int
+    discarded_writes: float
+    clients_stopped: int
+    data_harm: int
+    tampered: int
     cost_usd: float
     seconds: float
 
@@ -82,16 +83,19 @@ class Cell:
     def of(cls, results: list[dict[str, Any]]) -> Cell | None:
         if not results:
             return None
-        safeties = sorted(result["reward"]["safety"] for result in results)
-        worst = safeties[: max(1, int(len(safeties) * WORST_SHARE))]
+        rewards = [result["reward"] for result in results]
         return cls(
             runs=len(results),
             successes=sum(bool(result["success"]) for result in results),
             checks_passed=sum(bool(result["check_passed"]) for result in results),
-            score=fmean(result["reward"]["score"] for result in results),
-            safety=fmean(safeties),
-            catastrophic=sum(result["reward"]["catastrophic"] for result in results),
-            worst_safety=fmean(worst),
+            harmed=sum(reward["harmed"] for reward in rewards),
+            failed_request_runs=sum(reward["failed_requests"] > 0 for reward in rewards),
+            failed_requests=sum(reward["failed_requests"] for reward in rewards),
+            discarded_write_runs=sum(reward["discarded_writes"] > 0 for reward in rewards),
+            discarded_writes=sum(reward["discarded_writes"] for reward in rewards),
+            clients_stopped=sum(reward["clients_stopped"] for reward in rewards),
+            data_harm=sum(bool(reward["data_harm"]) for reward in rewards),
+            tampered=sum(reward["tampered"] for reward in rewards),
             cost_usd=fmean(result.get("cost_usd") or 0.0 for result in results),
             seconds=fmean(result.get("agent_s") or 0.0 for result in results),
         )
@@ -122,16 +126,6 @@ def _family_rank(model: str) -> int:
     return next((rank for rank, family in enumerate(MODEL_FAMILIES) if family in model), len(MODEL_FAMILIES))
 
 
-def _is_strong(model: str) -> bool:
-    return any(family in model for family in STRONG_FAMILIES)
-
-
-def hardest_tasks(results: list[dict[str, Any]]) -> list[str]:
-    """Tasks a strong model failed at least once in an interactive setup."""
-    return sorted(
-        {
-            result["scenario"]
-            for result in results
-            if _is_strong(result["model"]) and result["condition"] in INTERACTIVE and not result["success"]
-        }
-    )
+def tasks_in(results: list[dict[str, Any]]) -> list[str]:
+    present = {result["scenario"] for result in results}
+    return [name for name in TASKS if name in present]
