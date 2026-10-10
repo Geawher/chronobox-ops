@@ -4,7 +4,7 @@
   new major version breaks loudly (renamed module) *and* silently (amounts
   become integer cents behind a friendly ``str``), under live orders;
 - ``db-engine-migration``: move a live app from SQLite to PostgreSQL; the data
-  has mixed formats and clients keep writing during the cutover;
+  has mixed formats and clients keep writing during the cutover.
 
 All offline: wheels are built locally from bundled sources at setup.
 """

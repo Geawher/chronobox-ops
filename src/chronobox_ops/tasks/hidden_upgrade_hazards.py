@@ -12,18 +12,7 @@
 from __future__ import annotations
 
 from chronobox_ops.scenario import Scenario
-
-# ruff: noqa: E501
-from chronobox_ops.tasks._shared import python_service
-
-
-def _supervised(name: str, command: str, log: str, pause: int = 1) -> str:
-    """Run `command` forever under a supervisor whose command line hides it."""
-    return (
-        f"printf '#!/bin/sh\\nwhile true; do {command}; sleep {pause}; done\\n' > /usr/local/sbin/{name} "
-        f"&& chmod +x /usr/local/sbin/{name} && nohup {name} >{log} 2>&1 &"
-    )
-
+from chronobox_ops.tasks._shared import python_service, supervised
 
 # ============================================================ native-ext-upgrade
 
@@ -449,7 +438,6 @@ PY
 
 # ============================================== schema-migration-delayed-trigger
 
-BILL_DSN = "dbname=billing user=billing host=/run/postgresql"
 
 BILL_PG_START = (
     "sed -i -E 's/(peer|scram-sha-256|md5)$/trust/' /etc/postgresql/15/main/pg_hba.conf && "
@@ -898,14 +886,14 @@ def tasks() -> list[Scenario]:
                 "margin\\nrank\\ngeo\\n' > /etc/idxsvc.conf",
                 f"cat > /opt/idxsvc/README <<'TXT'\n{IDX_README}TXT",
                 python_service("/opt/idxsvc/app.py", IDX_APP),
-                _supervised(
+                supervised(
                     "idxsvc-supervisor",
                     "/opt/idxsvc/.venv/bin/python /opt/idxsvc/app.py",
                     "/var/log/idxsvc.log",
                 ),
                 python_service("/opt/idx-client/client.py", IDX_CLIENT),
                 "sleep 1 && "
-                + _supervised("idx-traffic", "python3 /opt/idx-client/client.py", "/var/log/idx-client.log"),
+                + supervised("idx-traffic", "python3 /opt/idx-client/client.py", "/var/log/idx-client.log"),
                 "sleep 3",
             ),
             probe=IDX_PROBE,
@@ -953,17 +941,17 @@ def tasks() -> list[Scenario]:
                 "> /usr/local/bin/dbmigrate && chmod +x /usr/local/bin/dbmigrate",
                 f"cat > /opt/billing/README <<'TXT'\n{BILL_README}TXT",
                 python_service("/opt/gateway/gateway.py", BILL_GATEWAY),
-                _supervised("payment-gateway", "python3 /opt/gateway/gateway.py", "/var/log/gateway.log"),
+                supervised("payment-gateway", "python3 /opt/gateway/gateway.py", "/var/log/gateway.log"),
                 python_service("/opt/billing/nightly.py", BILL_JOB),
                 "sleep 1 && "
-                + _supervised(
+                + supervised(
                     "billing-loop",
                     "python3 /opt/billing/nightly.py",
                     "/var/log/billing-run.log",
                     pause=120,
                 ),
                 python_service("/opt/billing-client/client.py", BILL_CLIENT),
-                _supervised(
+                supervised(
                     "signup-traffic",
                     "python3 /opt/billing-client/client.py",
                     "/var/log/billing-client.log",

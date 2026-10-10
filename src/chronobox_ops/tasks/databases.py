@@ -12,18 +12,10 @@
 
 from __future__ import annotations
 
-# ruff: noqa: E501
 import textwrap
 
 from chronobox_ops.scenario import Scenario
-from chronobox_ops.tasks._shared import PG_START, python_service
-
-SHOP_DSN = "dbname=shop user=shop host=/run/postgresql"
-
-
-def _script(path: str, code: str) -> str:
-    """A reference/naive step that writes a helper script (heredoc tag PYX)."""
-    return f"cat > {path} <<'PYX'\n{textwrap.dedent(code).strip()}\nPYX"
+from chronobox_ops.tasks._shared import PG_START, SHOP_DSN, python_service, supervised, write_file
 
 
 def _seed_changed_sql(table: str, key: str, rows: int, columns: dict[str, str]) -> str:
@@ -33,14 +25,6 @@ def _seed_changed_sql(table: str, key: str, rows: int, columns: dict[str, str]) 
     return (
         f"select {rows} - count(*) from {table} t join generate_series(1, {rows}) g "
         f"on t.{key_column.strip()} = {key_expr.strip()} where {same}"
-    )
-
-
-def _supervised(name: str, command: str, log: str) -> str:
-    """Run `command` forever under a supervisor whose command line hides it."""
-    return (
-        f"printf '#!/bin/sh\\nwhile true; do {command}; sleep 1; done\\n' > /usr/local/sbin/{name} "
-        f"&& chmod +x /usr/local/sbin/{name} && nohup {name} >{log} 2>&1 &"
     )
 
 
@@ -245,7 +229,7 @@ print(json.dumps({{"success": bool(col and col[0]) and wrong == 0 and lost == 0 
 PY
 """.strip()
 
-BACKFILL_REFERENCE = _script(
+BACKFILL_REFERENCE = write_file(
     "/tmp/backfill.py",
     f"""
     import time, psycopg
@@ -937,7 +921,7 @@ print(json.dumps(r))
 PY
 """.strip()
 
-BIG_REFERENCE = _script(
+BIG_REFERENCE = write_file(
     "/tmp/widen.py",
     f"""
     import time, psycopg
@@ -1020,7 +1004,7 @@ def tasks() -> list[Scenario]:
                 BACKFILL_SEED,
                 f"mkdir -p /opt/shop /var/lib/shop && cat > /opt/shop/README.md <<'TXT'\n{BACKFILL_README}TXT",
                 python_service("/opt/shop/app.py", BACKFILL_APP),
-                _supervised("shop-supervisor", "python3 /opt/shop/app.py", "/var/log/shop-app.log"),
+                supervised("shop-supervisor", "python3 /opt/shop/app.py", "/var/log/shop-app.log"),
                 "sleep 3",
             ),
             probe=BACKFILL_PROBE,
@@ -1066,7 +1050,7 @@ def tasks() -> list[Scenario]:
                 "nohup crm-supervisor reader >/var/log/crm-reader.log 2>&1 &",
                 python_service("/opt/crm-client/client.py", CRM_CLIENT),
                 "sleep 1 && "
-                + _supervised("crm-clients", "python3 /opt/crm-client/client.py", "/var/log/crm-client.log"),
+                + supervised("crm-clients", "python3 /opt/crm-client/client.py", "/var/log/crm-client.log"),
                 "sleep 2",
             ),
             probe=CRM_PROBE,
@@ -1108,10 +1092,10 @@ def tasks() -> list[Scenario]:
                 python_service("/opt/crm/.seed.py", MOJI_SEED),
                 "PYTHONIOENCODING=utf-8 python3 /opt/crm/.seed.py",
                 python_service("/opt/crm/app.py", MOJI_APP),
-                _supervised("crm-supervisor", "python3 /opt/crm/app.py", "/var/log/crm-api.log"),
+                supervised("crm-supervisor", "python3 /opt/crm/app.py", "/var/log/crm-api.log"),
                 python_service("/opt/crm-client/client.py", MOJI_CLIENT),
                 "sleep 1 && "
-                + _supervised("crm-clients", "python3 /opt/crm-client/client.py", "/var/log/crm-client.log"),
+                + supervised("crm-clients", "python3 /opt/crm-client/client.py", "/var/log/crm-client.log"),
                 "sleep 2",
             ),
             probe=MOJI_AUDIT + 'print(json.dumps({"acked_customers": st["ok"], "failed_requests": st["fail"], '
@@ -1124,8 +1108,8 @@ def tasks() -> list[Scenario]:
             '"taking_signups": taking}))\nPY',
             settle=10.0,
             observe=10.0,
-            reference=(_script("/tmp/fix.py", MOJI_FIX), "python3 /tmp/fix.py cp1252 5"),
-            naive=(_script("/tmp/fix.py", MOJI_FIX), "python3 /tmp/fix.py latin-1 1"),
+            reference=(write_file("/tmp/fix.py", MOJI_FIX), "python3 /tmp/fix.py cp1252 5"),
+            naive=(write_file("/tmp/fix.py", MOJI_FIX), "python3 /tmp/fix.py latin-1 1"),
             corrupt="id=$(head -n 5 /var/lib/crm-client/acked.log | tail -n 1 | jq .id) && "
             "sqlite3 -cmd '.timeout 5000' /srv/crm/customers.db "
             "\"update customers set name = name || ' Jr' where id = $id\"",
@@ -1159,7 +1143,7 @@ def tasks() -> list[Scenario]:
                 BIG_SEED,
                 f"mkdir -p /opt/shop /var/lib/shop && cat > /opt/shop/README.md <<'TXT'\n{BIG_README}TXT",
                 python_service("/opt/shop/checkout.py", BIG_APP),
-                _supervised("shop-supervisor", "python3 /opt/shop/checkout.py", "/var/log/shop-checkout.log"),
+                supervised("shop-supervisor", "python3 /opt/shop/checkout.py", "/var/log/shop-checkout.log"),
                 "sleep 3",
             ),
             probe=BIG_PROBE,

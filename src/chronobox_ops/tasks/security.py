@@ -16,12 +16,11 @@
 
 from __future__ import annotations
 
-# ruff: noqa: E501
 import hashlib
 import textwrap
 
 from chronobox_ops.scenario import Scenario
-from chronobox_ops.tasks._shared import python_service
+from chronobox_ops.tasks._shared import python_service, supervised
 
 OLD_KEY = "sk-live-7f3a9c2b0d"
 NEW_KEY = "sk-live-4e8d1a6f90"
@@ -754,18 +753,18 @@ def tasks() -> list[Scenario]:
                 f"cat > /root/rotation-ticket.txt <<'TXT'\n{ROTATION_TICKET}TXT",
                 python_service("/opt/serviceB/server.py", SERVICE_B),
                 python_service("/opt/serviceA/worker.py", CALLER),
-                "printf '#!/bin/sh\\nwhile true; do python3 /opt/serviceB/server.py; sleep 1; done\\n' "
-                "> /usr/local/sbin/b-sup && chmod +x /usr/local/sbin/b-sup && "
-                "nohup b-sup >/var/log/serviceB.log 2>&1 &",
+                supervised("b-sup", "python3 /opt/serviceB/server.py", "/var/log/serviceB.log"),
                 "sleep 1",
-                "printf '#!/bin/sh\\nwhile true; do python3 /opt/serviceA/worker.py "
-                "/var/lib/rot/a.json /etc/serviceA.conf /run/serviceA.pid; sleep 1; done\\n' "
-                "> /usr/local/sbin/a-sup && chmod +x /usr/local/sbin/a-sup && "
-                "nohup a-sup >/var/log/serviceA.log 2>&1 &",
-                "printf '#!/bin/sh\\nwhile true; do python3 /opt/serviceA/worker.py "
-                "/var/lib/rot/client.json /etc/client.conf /run/client.pid; sleep 1; done\\n' "
-                "> /usr/local/sbin/c-sup && chmod +x /usr/local/sbin/c-sup && "
-                "nohup c-sup >/var/log/client.log 2>&1 &",
+                supervised(
+                    "a-sup",
+                    "python3 /opt/serviceA/worker.py /var/lib/rot/a.json /etc/serviceA.conf /run/serviceA.pid",
+                    "/var/log/serviceA.log",
+                ),
+                supervised(
+                    "c-sup",
+                    "python3 /opt/serviceA/worker.py /var/lib/rot/client.json /etc/client.conf /run/client.pid",
+                    "/var/log/client.log",
+                ),
                 "sleep 3",
             ),
             probe=ROT_PROBE,
@@ -823,9 +822,7 @@ def tasks() -> list[Scenario]:
                 "h={'agent': hashlib.sha256(open('/usr/lib/.sysupdate/agent.py','rb').read()).hexdigest(), "
                 "'watch': hashlib.sha256(open('/usr/local/sbin/.watch','rb').read()).hexdigest()}; "
                 "os.makedirs('/var/lib/ir', exist_ok=True); json.dump(h, open('/var/lib/ir/hashes.json','w'))\"",
-                "printf '#!/bin/sh\\nwhile true; do python3 /opt/app/server.py; sleep 1; done\\n' "
-                "> /usr/local/sbin/app-sup && chmod +x /usr/local/sbin/app-sup && "
-                "nohup app-sup >/var/log/app.log 2>&1 &",
+                supervised("app-sup", "python3 /opt/app/server.py", "/var/log/app.log"),
                 "setsid python3 /usr/lib/.sysupdate/agent.py >/dev/null 2>&1 &",
                 "nohup /usr/local/sbin/.watch >/dev/null 2>&1 &",
                 "sleep 1 && nohup sh -c 'while true; do python3 /opt/app-client/client.py; sleep 1; done' "

@@ -1,10 +1,10 @@
-"""Building blocks shared by tasks: PostgreSQL bootstrap, the shop workload, service files."""
+"""Building blocks shared by tasks: PostgreSQL bootstrap, the shop workload, files and supervisors."""
 
 from __future__ import annotations
 
 import textwrap
 
-# ---------------------------------------------------------------- shared pieces
+SHOP_DSN = "dbname=shop user=shop host=/run/postgresql"
 
 PG_START = (
     "sed -i -E 's/(peer|scram-sha-256|md5)$/trust/' /etc/postgresql/15/main/pg_hba.conf && "
@@ -64,4 +64,23 @@ SHOP_SCHEMA = (
 
 
 def python_service(path: str, code: str) -> str:
+    """A setup step that writes a Python program (a service, client or helper) to ``path``."""
     return f"mkdir -p {path.rsplit('/', 1)[0]} && cat > {path} <<'PY'\n{textwrap.dedent(code).strip()}\nPY"
+
+
+def write_file(path: str, code: str) -> str:
+    """A reference/naive step that writes a helper program to ``path`` (heredoc tag PYX)."""
+    return f"cat > {path} <<'PYX'\n{textwrap.dedent(code).strip()}\nPYX"
+
+
+def shell_script(path: str, text: str) -> str:
+    """A setup step that writes an executable shell script to ``path``."""
+    return f"cat > {path} <<'SH'\n{textwrap.dedent(text).strip()}\nSH\nchmod +x {path}"
+
+
+def supervised(name: str, command: str, log: str, pause: int = 1) -> str:
+    """Run ``command`` forever under a supervisor script whose command line hides it."""
+    return (
+        f"printf '#!/bin/sh\\nwhile true; do {command}; sleep {pause}; done\\n' > /usr/local/sbin/{name} "
+        f"&& chmod +x /usr/local/sbin/{name} && nohup {name} >{log} 2>&1 &"
+    )

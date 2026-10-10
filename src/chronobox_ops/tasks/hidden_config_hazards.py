@@ -21,7 +21,6 @@ binary (documented), which is the careful path.
 
 from __future__ import annotations
 
-# ruff: noqa: E501
 import textwrap
 
 from chronobox_ops.scenario import Scenario

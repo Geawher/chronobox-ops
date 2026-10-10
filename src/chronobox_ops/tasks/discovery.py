@@ -5,6 +5,9 @@ INDEX CONCURRENTLY``, reload instead of restart). Here the software is in-house:
 its pitfalls are not in any training data and not in its docs, so an agent finds
 them only by running the risky step somewhere — on the live machine, on a copy
 it builds by hand, or on a fork.
+
+- ``ledger-migrate``: migrate a ledger service's database with its own admin tool;
+- ``jobq-tuning``: tune a job queue whose documented settings crash it.
 """
 
 from __future__ import annotations

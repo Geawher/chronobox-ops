@@ -12,16 +12,10 @@
 
 from __future__ import annotations
 
-# ruff: noqa: E501
 import textwrap
 
 from chronobox_ops.scenario import FAILED_REQUESTS, Scenario
-from chronobox_ops.tasks._shared import python_service
-
-
-def _script(path: str, text: str) -> str:
-    return f"cat > {path} <<'SH'\n{textwrap.dedent(text).strip()}\nSH\nchmod +x {path}"
-
+from chronobox_ops.tasks._shared import python_service, shell_script
 
 # ------------------------------------------------------------- git-secret-purge
 
@@ -1060,7 +1054,7 @@ def tasks() -> list[Scenario]:
                 "--python .venv/bin/python --find-links /opt/wheelhouse authlib-x==1.6.0 tokens-x==2.4.0",
                 python_service("/opt/authsvc/app.py", AUTH_APP),
                 python_service("/opt/authsvc/tests/test_sessions.py", AUTH_TEST),
-                _script(
+                shell_script(
                     "/usr/local/sbin/authsvc-supervisor",
                     """
                     #!/bin/sh
@@ -1070,7 +1064,7 @@ def tasks() -> list[Scenario]:
                 ),
                 "nohup authsvc-supervisor >/var/log/authsvc.log 2>&1 &",
                 python_service("/opt/auth-client/client.py", AUTH_CLIENT),
-                _script(
+                shell_script(
                     "/usr/local/sbin/login-traffic",
                     """
                     #!/bin/sh
@@ -1125,7 +1119,7 @@ def tasks() -> list[Scenario]:
                 "db.execute('pragma journal_mode=wal'); db.execute('create table kv(k text primary key, v text)'); "
                 f"db.executemany('insert into kv values (?, ?)', [(f'item-{{i}}', str(r.randint(0, 999))) for i in range({APP_SEED_ITEMS})]); "
                 'db.commit()"',
-                _script(
+                shell_script(
                     "/usr/local/sbin/app-supervisor",
                     """
                     #!/bin/sh
@@ -1136,7 +1130,7 @@ def tasks() -> list[Scenario]:
                 "printf '# export of the inventory for the reporting team (app-export-timer)\\n"
                 "db=/var/lib/app/state.db\\ntable=kv\\n' > /etc/app-export.conf",
                 python_service("/opt/app-jobs/export.py", APP_EXPORT),
-                _script(
+                shell_script(
                     "/usr/local/sbin/app-export-timer",
                     """
                     #!/bin/sh
@@ -1146,7 +1140,7 @@ def tasks() -> list[Scenario]:
                 ),
                 "nohup app-export-timer >>/var/log/app-export.log 2>&1 &",
                 python_service("/opt/app-client/client.py", APP_CLIENT),
-                _script(
+                shell_script(
                     "/usr/local/sbin/inventory-traffic",
                     """
                     #!/bin/sh
@@ -1198,7 +1192,7 @@ def tasks() -> list[Scenario]:
                 python_service("/opt/kv/releases/1.9.3/node.py", KV_NODE_V1 + KV_NODE_BODY),
                 python_service("/opt/kv/releases/2.0.0/node.py", KV_NODE_V2 + KV_NODE_BODY),
                 python_service("/opt/kv/lb.py", KV_LB),
-                _script(
+                shell_script(
                     "/usr/local/sbin/kv-node",
                     """
                     #!/bin/sh
@@ -1216,7 +1210,7 @@ def tasks() -> list[Scenario]:
                 "for i in $(seq 1 30); do n=0; for p in 7301 7302 7303; do curl -sf localhost:$p/status >/dev/null && n=$((n+1)); done; "
                 "[ $n = 3 ] && break; sleep 1; done",
                 python_service("/opt/kv-client/client.py", KV_CLIENT),
-                _script(
+                shell_script(
                     "/usr/local/sbin/kv-traffic",
                     """
                     #!/bin/sh
@@ -1237,7 +1231,7 @@ def tasks() -> list[Scenario]:
             evidence=("/var/lib/kv-client/acked.log",),
             corrupt=KV_CORRUPT,
             reference=(
-                _script(
+                shell_script(
                     "/root/roll.sh",
                     """
                     #!/bin/bash
@@ -1259,7 +1253,7 @@ def tasks() -> list[Scenario]:
                 "/root/roll.sh '' false",
             ),
             naive=(
-                _script(
+                shell_script(
                     "/root/roll.sh",
                     """
                     #!/bin/bash

@@ -1,14 +1,20 @@
-"""Live-operations tasks a careful engineer knows how to do safely."""
+"""Live-operations tasks a careful engineer knows how to do safely.
+
+- ``db-lock-incident``: checkouts hang behind a lock; end the incident without losing orders;
+- ``db-add-index``: add an index to a large, busy table without blocking writes;
+- ``disk-cleanup``: free disk space while the app keeps writing to an open log;
+- ``nginx-live-config``: change nginx's config under live traffic;
+- ``sessiond-reconfigure``: reconfigure a daemon without dropping its in-memory sessions.
+"""
 
 from __future__ import annotations
 
 import textwrap
 
 from chronobox_ops.scenario import Scenario
-from chronobox_ops.tasks._shared import PG_START, SHOP_LOADGEN, SHOP_SCHEMA, python_service
+from chronobox_ops.tasks._shared import PG_START, SHOP_DSN, SHOP_LOADGEN, SHOP_SCHEMA, python_service
 
 SHOP_PSQL = "psql -d shop -U shop -h /run/postgresql"
-SHOP_DSN = "dbname=shop user=shop host=/run/postgresql"
 TERMINATE_IDLE_TRANSACTIONS = (
     f'{SHOP_PSQL} -Atc "select count(pg_terminate_backend(pid)) from pg_stat_activity '
     "where state like 'idle in transaction%'\""
