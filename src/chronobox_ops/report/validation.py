@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from chronobox_ops.tasks import TASKS
-from chronobox_ops.validate import Mode
+from chronobox_ops.validate import Attempt, Mode
 
 MUST_FAIL = (Mode.NAIVE, Mode.CORRUPT, Mode.ROLLBACK)
 
@@ -19,12 +19,7 @@ def read_attempts(log: Path) -> list[dict[str, Any]]:
 
 def behaved(attempt: dict[str, Any]) -> bool:
     """The attempt got the verdict its mode requires, from both graders, with a working probe."""
-    if attempt["error"] or attempt["probe_readings"] == 0:
-        return False
-    must_succeed = attempt["mode"] == Mode.REFERENCE
-    right = attempt["success"] and attempt["harm"] == 0 if must_succeed else not attempt["success"]
-    other = attempt["other_grade"]
-    return right and (other is None or other["success"] == attempt["success"])
+    return not Attempt.from_json(attempt).problems()
 
 
 def render(attempts: list[dict[str, Any]], runs: list[dict[str, Any]]) -> str:
