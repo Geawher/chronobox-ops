@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import tempfile
 import time
 from dataclasses import asdict, dataclass, field
@@ -82,6 +83,11 @@ class Attempt:
     total_s: float = 0.0
     error: str | None = None
 
+    @classmethod
+    def from_json(cls, fields: dict[str, Any]) -> Attempt:
+        """An attempt as ``validate --log`` wrote it."""
+        return cls(**{**fields, "mode": Mode(fields["mode"])})
+
     def problems(self) -> list[str]:
         """What is wrong with the task according to this attempt; empty if nothing."""
         if self.error:
@@ -123,6 +129,7 @@ async def attempt(
     workspace = scenario_workspace(task, profile, root=root)
     machine = ScenarioMachine(task, workspace)
     started = time.monotonic()
+    probing = None
     lock: int | None = await scheduler.admit(task.mem_mib * (3 if grade is GradeMode.BOTH else 1) + BOOT_EXTRA_MIB)
     try:
         await machine.boot()
@@ -140,9 +147,10 @@ async def attempt(
         result.failed_steps = await _apply(task, mode, workspace)
         result.fix_s = round(time.monotonic() - fixing, 1)
         report = await machine.finish(grade)
-        probing.cancel()
         _graded(result, task, report)
     finally:
+        if probing is not None:
+            probing.cancel()
         scheduler.release(lock)
         await workspace.close()
         await workspace.backend.cleanup()
@@ -229,15 +237,14 @@ async def validate_all(
                 out.write(json.dumps(asdict(done), default=str) + "\n")
         return done
 
-    attempts = [*earlier, *await asyncio.gather(*(one(*unit) for unit in units))]
+    try:
+        attempts = [*earlier, *await asyncio.gather(*(one(*unit) for unit in units))]
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
     return {name: [p for a in attempts if a.task == name for p in a.problems()] for name in names}
 
 
 def _logged(log: Path) -> list[Attempt]:
     if not log.exists():
         return []
-    attempts = []
-    for line in log.read_text().splitlines():
-        fields = json.loads(line)
-        attempts.append(Attempt(**{**fields, "mode": Mode(fields["mode"])}))
-    return attempts
+    return [Attempt.from_json(json.loads(line)) for line in log.read_text().splitlines()]

@@ -15,7 +15,7 @@ import sys
 import tempfile
 import time
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -65,15 +65,12 @@ class Run:
     seed: int
     options: RunOptions
     scheduler: MemoryScheduler
-    scratch: Path = field(default_factory=lambda: Path(tempfile.mkdtemp(prefix="cbx-")))
 
     def __post_init__(self) -> None:
         self.name = f"{self.task.name}/{self.setup.name}-{self.seed}"
         self.run_dir = self.options.out / self.task.name / f"{self.setup.name}-{self.seed}"
         # The agent works in an empty directory outside any repository.
         self.home = self.options.agent_dirs / f"{self.task.name}-{self.setup.name}-{self.seed}"
-        # Unix socket paths are limited to ~108 bytes: the machine lives under a short temp dir.
-        self.machine_socket = self.scratch / "machine.sock"
         self.active = ActiveRun(self.name)
 
     async def execute(self) -> dict[str, Any]:
@@ -83,6 +80,9 @@ class Run:
         for directory in (self.run_dir, self.home):
             shutil.rmtree(directory, ignore_errors=True)
             directory.mkdir(parents=True)
+        # Unix socket paths are limited to ~108 bytes: the machine lives under a short temp dir.
+        self.scratch = Path(tempfile.mkdtemp(prefix="cbx-"))
+        self.machine_socket = self.scratch / "machine.sock"
         self.scheduler.active.append(self.active)
         result: dict[str, Any] = {"scenario": self.task.name, "condition": self.setup.name, "seed": self.seed,
                                   "model": self.options.agent.model}  # fmt: skip
@@ -106,8 +106,9 @@ class Run:
         if self.options.grade is GradeMode.BOTH:
             extra += 2 * self.task.mem_mib  # two copies of the end state are graded
         lock: int | None = await self.scheduler.admit(self.task.mem_mib + PER_RUN_MIB + extra)
-        machine = await self._start_machine()
+        machine = None
         try:
+            machine = await self._start_machine()
             status = await self._wait_for_machine()
             self.scheduler.release(lock)
             lock = None
@@ -123,7 +124,8 @@ class Run:
             return {**outcome, **_scored(self.task, report)}
         finally:
             self.scheduler.release(lock)
-            await self._stop_machine(machine)
+            if machine is not None:
+                await self._stop_machine(machine)
 
     async def _start_machine(self) -> asyncio.subprocess.Process:
         with open(self.run_dir / "machine.log", "wb") as log:
@@ -240,6 +242,8 @@ async def run_grid(
             pending = [(r["scenario"], r["condition"], r["seed"]) for r in done if r.get("stopped_for_memory")]
             if not pending:
                 break
+        for name, setup, seed in pending:
+            print(json.dumps({"not_run": f"{name}/{setup}-{seed}", "reason": "low memory"}), flush=True)
     finally:
         watchdog.cancel()
     return results
