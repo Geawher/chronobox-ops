@@ -131,7 +131,7 @@ def parser() -> argparse.ArgumentParser:
                          help="empty working directories for the agents, outside any repository")  # fmt: skip
     running.add_argument("--claude", default="claude")
     running.add_argument("--token-file", type=Path, default=Path(DEFAULT_TOKEN_FILE),
-                         help="Claude Code token for full-* setups (sandbox containers)")  # fmt: skip
+                         help="Claude Code token for every setup (required for full-*)")  # fmt: skip
     running.add_argument("--force", action="store_true", help="rerun finished runs")
     running.add_argument("--grade", type=GradeMode, choices=list(GradeMode), default=GradeMode.FAST_FORWARD,
                          help="'both' also grades a copy of the end state the natural way (other_grade)")  # fmt: skip

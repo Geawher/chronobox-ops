@@ -5,9 +5,12 @@
   tools, through a stdio front end connected to the run's machine;
 - full: normal Claude Code (explicit allow-list of its tools, internet) in a sandbox
   container that sees only an empty work directory; it reaches the machine through
-  the chronobox MCP over HTTP on the docker bridge, behind a secret URL path. The
-  token comes from a file the user saved for benchmark runs and is passed as an
-  environment variable, never written to run directories.
+  the chronobox MCP over HTTP on the docker bridge, behind a secret URL path.
+
+Every setup signs in with the Claude Code token saved for benchmark runs when that file
+exists (full setups require it), so all runs use the same account; without it,
+single-shot and MCP-only runs use the host's Claude Code login. The token is passed as an
+environment variable, never written to run directories.
 """
 
 from __future__ import annotations
@@ -32,6 +35,7 @@ AGENT_IMAGE = "chronobox-ops-agent:latest"
 DOCKER_HOST_IP = "172.17.0.1"
 CONTAINER_MEMORY = "2g"
 FRONT_END_WAIT_TRIES = 100
+TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"
 FULL_ACCESS_TOOLS = (
     "Bash", "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "LS", "WebSearch", "WebFetch",
     "Task", "TodoWrite", "NotebookEdit", "mcp__chronobox",
@@ -66,6 +70,11 @@ def base_claude_args(prompt: str, options: AgentOptions) -> list[str]:
 async def prepare(setup: Setup, prompt: str, machine_socket: Path, home: Path, options: AgentOptions) -> AgentLaunch:
     """Everything needed to start the agent for ``setup``; ``home`` is its empty working directory."""
     env = {**os.environ, "MCP_TOOL_TIMEOUT": MCP_TOOL_TIMEOUT_MS}
+    token_file = options.token_file.expanduser()
+    if token_file.exists():
+        env[TOKEN_ENV] = token_file.read_text().strip()
+    elif setup.kind is AgentKind.FULL:
+        raise RuntimeError(f"full setups need a Claude Code token in {token_file} (claude setup-token)")
     args = base_claude_args(prompt, options)
     if setup.kind is AgentKind.SINGLE_SHOT:
         return AgentLaunch([options.claude, *args, "--strict-mcp-config", "--tools", ""], env)
@@ -92,12 +101,11 @@ async def _prepare_full(
     work.mkdir()
     url = f"http://{DOCKER_HOST_IP}:{port}/mcp/{path_secret}"
     (work / "mcp.json").write_text(json.dumps({"mcpServers": {"chronobox": {"type": "http", "url": url}}}))
-    env["CLAUDE_CODE_OAUTH_TOKEN"] = options.token_file.expanduser().read_text().strip()
     container = f"cbx-{secrets.token_hex(5)}"
     binary = os.path.realpath(shutil.which(options.claude) or options.claude)
     docker = [
         "docker", "run", "--rm", "--name", container, "-u", f"{os.getuid()}:{os.getgid()}",
-        "--memory", CONTAINER_MEMORY, "-e", "CLAUDE_CODE_OAUTH_TOKEN", "-e", "MCP_TOOL_TIMEOUT",
+        "--memory", CONTAINER_MEMORY, "-e", TOKEN_ENV, "-e", "MCP_TOOL_TIMEOUT",
         "-e", "HOME=/home/agent", "-v", f"{work}:/work", "-w", "/work",
         "-v", f"{binary}:/usr/local/bin/claude:ro", AGENT_IMAGE,
         "claude", *args, "--mcp-config", "/work/mcp.json", "--strict-mcp-config",

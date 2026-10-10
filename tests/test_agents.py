@@ -1,11 +1,14 @@
 import json
+from dataclasses import replace
 from pathlib import Path
+
+import pytest
 
 from chronobox_ops.claude_trace import summarize
 from chronobox_ops.harness.agents import AgentOptions, extract_script, prepare
 from chronobox_ops.harness.setups import SETUPS
 
-OPTIONS = AgentOptions(model="haiku", max_usd=1.0)
+OPTIONS = AgentOptions(model="haiku", max_usd=1.0, token_file=Path("/nonexistent/claude-token"))
 
 
 def test_extract_script_takes_the_last_bash_block() -> None:
@@ -44,3 +47,15 @@ async def test_mcp_only_agent_gets_only_chronobox_tools_for_its_setup(tmp_path: 
     assert launch.command[launch.command.index("--allowedTools") + 1] == "mcp__chronobox"
     config = json.loads((tmp_path / "mcp.json").read_text())["mcpServers"]["chronobox"]
     assert config["args"][-2:] == ["--profile", "chronobox"]
+
+
+async def test_every_setup_uses_the_saved_token_when_there_is_one(tmp_path: Path) -> None:
+    token = tmp_path / "token"
+    token.write_text("sk-test\n")
+    launch = await prepare(SETUPS["alone"], "task", tmp_path / "m.sock", tmp_path, replace(OPTIONS, token_file=token))
+    assert launch.env["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-test"
+
+
+async def test_full_setups_need_the_token(tmp_path: Path) -> None:
+    with pytest.raises(RuntimeError, match="token"):
+        await prepare(SETUPS["full-alone"], "task", tmp_path / "m.sock", tmp_path, OPTIONS)
