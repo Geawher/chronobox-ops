@@ -70,17 +70,19 @@ class Run:
     def __post_init__(self) -> None:
         self.name = f"{self.task.name}/{self.setup.name}-{self.seed}"
         self.run_dir = self.options.out / self.task.name / f"{self.setup.name}-{self.seed}"
-        # The agent works in an empty directory outside any repository.
-        self.home = self.options.agent_dirs / f"{self.task.name}-{self.setup.name}-{self.seed}"
         self.active = ActiveRun(self.name)
 
     async def execute(self) -> dict[str, Any]:
         done = self.run_dir / "result.json"
         if done.exists() and not self.options.force:
             return json.loads(done.read_text())
-        for directory in (self.run_dir, self.home):
-            shutil.rmtree(directory, ignore_errors=True)
-            directory.mkdir(parents=True)
+        shutil.rmtree(self.run_dir, ignore_errors=True)
+        self.run_dir.mkdir(parents=True)
+        # The agent works in an empty directory outside any repository, its own even when
+        # several grids (other models, other --out) run the same task at once.
+        self.options.agent_dirs.mkdir(parents=True, exist_ok=True)
+        self.home = Path(tempfile.mkdtemp(prefix=f"{self.task.name}-{self.setup.name}-{self.seed}-",
+                                          dir=self.options.agent_dirs))  # fmt: skip
         # Unix socket paths are limited to ~108 bytes: the machine lives under a short temp dir.
         self.scratch = Path(tempfile.mkdtemp(prefix="cbx-"))
         self.machine_socket = self.scratch / "machine.sock"
@@ -95,6 +97,7 @@ class Run:
         finally:
             self.scheduler.active.remove(self.active)
             shutil.rmtree(self.scratch, ignore_errors=True)
+            shutil.rmtree(self.home, ignore_errors=True)
         if self.active.stopped_for_memory:  # killed processes surface as ordinary errors: retry instead
             shutil.rmtree(self.run_dir, ignore_errors=True)
             return {**result, "stopped_for_memory": True}
