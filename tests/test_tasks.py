@@ -5,7 +5,7 @@ import re
 from chronobox_ops.scenario import HARNESS_HARM
 from chronobox_ops.tasks import TASKS
 
-HEREDOC = re.compile(r"<<'PY'\n(.*?)\nPY", re.S)
+HEREDOC = re.compile(r"<<'(PYX?)'\n(.*?)\n\1(?:\n|$)", re.S)
 
 
 def test_there_are_thirty_tasks_with_unique_names() -> None:
@@ -14,8 +14,9 @@ def test_there_are_thirty_tasks_with_unique_names() -> None:
 
 def test_embedded_python_compiles() -> None:
     for task in TASKS.values():
-        for command in (*task.setup, task.probe, task.check):
-            for code in HEREDOC.findall(command):
+        commands = (*task.setup, task.probe, task.check, task.fast_forward, *task.reference, *task.naive, task.corrupt)
+        for command in commands:
+            for _, code in HEREDOC.findall(command):
                 compile(code, task.name, "exec")
 
 
