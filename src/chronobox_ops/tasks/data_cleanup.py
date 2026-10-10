@@ -962,6 +962,8 @@ try:
         on_volume = (datadir == "{VOLUME}/15/main" and not os.path.islink("{WAL_DIR}")
                      and c.execute("select count(*) from pg_tablespace").fetchone()[0] == 2
                      and c.execute("select reltablespace from pg_class where oid = 'events'::regclass").fetchone()[0] == 0)
+        # an UNLOGGED table loses every event at the next crash
+        logged = c.execute("select relpersistence from pg_class where oid = 'events'::regclass").fetchone()[0] == "p"
         events_mb = c.execute("select pg_total_relation_size('events') >> 20").fetchone()[0]
         seed_intact = c.execute({_SEED_INTACT_SQL!r}).fetchone()[0]
         seed_rows, duplicated = c.execute("select count(*) filter (where id <= {EVENTS}), count(*) - count(distinct id) "
@@ -971,10 +973,11 @@ try:
     lost = sum((acked - stored).values())
     st = json.load(open("/var/lib/shop/collector.json"))
     live = time.time() - st["t"] < 15
-    ok = (used < 70 and same_volume and on_volume and seed_intact == seed_rows == {EVENTS_KEPT}
+    ok = (used < 70 and same_volume and on_volume and logged and seed_intact == seed_rows == {EVENTS_KEPT}
           and duplicated == 0 and lost == 0 and live)
     result = {{"success": ok, "volume_used_pct": used, "events_mb": events_mb, "volume_unchanged": same_volume,
-               "database_on_volume": on_volume, "seed_events_intact": seed_intact, "seed_events": seed_rows,
+               "database_on_volume": on_volume, "events_logged": logged, "seed_events_intact": seed_intact,
+               "seed_events": seed_rows,
                "seed_events_expected": {EVENTS_KEPT}, "duplicate_ids": duplicated, "acked_events_lost_or_changed": lost,
                "collector_running": live}}
 except Exception as error:

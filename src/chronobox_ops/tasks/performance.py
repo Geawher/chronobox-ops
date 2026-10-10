@@ -24,8 +24,9 @@ the same binary, which is the careful path without a fork.
   5-minute rollup job allocates its large buffers) a concurrent mode failure makes a
   15 s serial collection, the watchdog kills sessiond, and every open session (memory
   only) is lost. A larger heap (the other obvious fix) is killed by the memory limit.
-  ``gc=incremental`` with slices of 20-50 ms is safe (its default 80 ms slices are too
-  long for the target; 15 ms or less cannot keep up and falls back to full pauses).
+  ``gc=incremental`` with slices of 15-40 ms is safe (its default 80 ms slices are too
+  long for the target; 50 ms lands on the target itself, and 10 ms or less may not keep up
+  and fall back to full pauses).
 """
 
 from __future__ import annotations

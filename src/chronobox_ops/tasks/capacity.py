@@ -435,13 +435,15 @@ CATALOG_SYNC = r"""
     start = time.time()
     def run(k):
         rng = random.Random(k)
-        i = k
+        i, nxt = k, start + k / RATE
         while i / RATE < SECONDS:
-            time.sleep(max(0, start + i / RATE - time.time()))
+            now = time.time()
+            nxt = max(nxt, now - 1)  # behind schedule: catch up at most 1 s, never burst
+            time.sleep(max(0, nxt - now))
             outcome, _ = request(f"/quote?sku={rng.randint(1, 20000)}")
             with lock:
                 counts[outcome] += 1
-            i += THREADS
+            i, nxt = i + THREADS, nxt + THREADS / RATE
     threads = [threading.Thread(target=run, args=(k,)) for k in range(THREADS)]
     for t in threads:
         t.start()
@@ -521,6 +523,9 @@ APIGW_SETUP = (
         """,
     ),
     "(nohup /usr/local/sbin/catalog-cron >/dev/null 2>&1 &)",
+    # the clients and the sync job stand for the outside world: fingerprint them for the check
+    "mkdir -p /opt/flowcheck && sha256sum /opt/apigw-clients/*.py /usr/local/bin/catalog-sync "
+    "/usr/local/sbin/catalog-cron /usr/local/sbin/apigw-client > /opt/flowcheck/clients.sha256",
     # lingering flows reach their steady state after one linger period
     "sleep 62 && curl -s localhost:8080/stats",
 )
@@ -1215,11 +1220,17 @@ def tasks() -> list[Scenario]:
                 if last is not None:
                     during = sum(1 for t in web["refused_at"] + od["refused_at"]
                                  if last["started"] - 1 <= t <= last["finished"] + 1)
+                import hashlib
+                # the clients and the sync job must still be the ones the outside world runs
+                clients = [l.split(None, 1) for l in open("/opt/flowcheck/clients.sha256").read().splitlines()]
+                unchanged = all(os.path.isfile(path) and hashlib.sha256(open(path, "rb").read()).hexdigest() == digest
+                                for digest, path in clients)
                 ok = (stats is not None and recent and last["refused"] == 0 and last["fail"] == 0 and during == 0
-                      and lost == 0 and duplicated == 0 and cron)
+                      and lost == 0 and duplicated == 0 and cron and unchanged)
                 print(json.dumps({"success": ok, "apigw_up": stats is not None, "last_sync": last,
                                   "sync_recent": recent, "client_refusals_during_sync": during,
                                   "lost_orders": lost, "duplicated_orders": duplicated, "catalog_cron": cron,
+                                  "clients_unchanged": unchanged,
                                   "config": {k: (stats or {}).get(k) for k in ("flow_table", "flow_linger_s")}}))
                 PY
             """).strip(),
@@ -1232,6 +1243,7 @@ def tasks() -> list[Scenario]:
             counters=("failed_requests", "refused"),
             acked="acked_orders",
             evidence=("/var/lib/apigw-clients/acked.log", "/var/lib/catalog-sync/runs.log"),
+            secrets=("/opt/flowcheck/clients.sha256",),
             reference=(APIGW_CONF.format(table=4096, linger=44),),
             naive=(APIGW_CONF.format(table=4096, linger=30),),
             corrupt=(
