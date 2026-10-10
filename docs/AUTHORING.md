@@ -105,8 +105,11 @@ engineer can do the job without hurting anyone.
    traps: silent data corruption, delayed failures (timers, caches), irreversible
    steps, in-memory state lost on restart, behaviour that only shows under live traffic
    or only when tried.
-8. Embedded Python goes in heredocs (`<<'PY' ... PY`). Inside triple-quoted Python
-   source, write `"\\n"` for a newline that belongs to the embedded program.
+8. Embedded Python goes in heredocs (`<<'PY' ... PY`); `tests/test_tasks.py` compiles
+   every one. Inside triple-quoted Python source, write `"\\n"` for a newline that
+   belongs to the embedded program. `tasks/_shared.py` has the common steps: write a
+   program (`python_service`, `write_file`, `shell_script`), run a client or service
+   under a hidden supervisor (`supervised`), start PostgreSQL (`PG_START`).
 9. Keep setup under ~90 s and memory under 1.5 GB unless the task needs more.
 
 `tasks/discovery.py`, `tasks/upgrades.py` and `tasks/reliability.py` are complete
