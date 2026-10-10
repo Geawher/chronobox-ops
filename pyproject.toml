@@ -13,7 +13,7 @@ chronobox-ops = "chronobox_ops.cli:main"
 
 [tool.uv.sources]
 # To develop both at once: uv add --editable ../chronobox (path to a local checkout).
-chronobox = { git = "https://github.com/Geawher/chronobox.git", branch = "main" }
+chronobox = { git = "https://github.com/Geawher/chronobox.git", branch = "tool-guidance" }
 
 [dependency-groups]
 dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6"]
