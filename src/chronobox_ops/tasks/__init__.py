@@ -13,7 +13,6 @@ from chronobox_ops.tasks import (
     live_ops,
     one_shot,
     performance,
-    recovery,
     releases,
     reliability,
     security,
@@ -34,7 +33,6 @@ MODULES = (
     performance,
     data_cleanup,
     one_shot,
-    recovery,
 )
 
 

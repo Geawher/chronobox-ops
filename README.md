@@ -17,7 +17,7 @@ probes measure the damage along the way.
 
 ## Tasks
 
-41 offline tasks of varying difficulty; `chronobox-ops list` shows them all.
+37 offline tasks of varying difficulty; `chronobox-ops list` shows them all.
 
 | Theme | Tasks |
 |---|---|
@@ -135,7 +135,7 @@ benchmark's authors are the most valuable contribution.
 ## Layout
 
 ```
-src/chronobox_ops/  scenario.py · tasks/ (41 tasks by theme) · scoring.py · validate.py · cli.py
+src/chronobox_ops/  scenario.py · tasks/ (37 tasks by theme) · scoring.py · validate.py · cli.py
                     harness/ (machine: probes, secrets, damage · setups · agents · scheduler · runner)
                     report/ (results, Markdown tables, HTML report, validation report)
 agent/              sandbox image for full-access setups
