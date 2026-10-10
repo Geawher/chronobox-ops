@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from chronobox_ops.report import html, markdown
-from chronobox_ops.report.results import export, load
+from chronobox_ops.report.results import export, load, models_in
 
 
 def write_run(root: Path, setup: str, seed: int, *, check_passed: bool, damage: dict[str, float]) -> None:
@@ -51,3 +51,8 @@ def test_exported_results_load_back_the_same(tmp_path: Path) -> None:
     assert [(r["seed"], r["success"], r["reward"]) for r in again] == [
         (r["seed"], r["success"], r["reward"]) for r in results
     ]
+
+
+def test_any_model_name_is_reported_weakest_family_first() -> None:
+    results = [{"model": model} for model in ("claude-opus-5-5", "my-model", "haiku", "claude-sonnet-5-5")]
+    assert models_in(results) == ["haiku", "claude-sonnet-5-5", "claude-opus-5-5", "my-model"]

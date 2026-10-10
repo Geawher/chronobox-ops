@@ -16,7 +16,8 @@ from typing import Any
 from chronobox_ops.scoring import rescore
 from chronobox_ops.tasks import TASKS
 
-MODELS = ("haiku", "sonnet", "opus")
+# Model families, weakest first: tables list models in this order (a model is any --model value).
+MODEL_FAMILIES = ("haiku", "sonnet", "opus")
 SETUP_ORDER = ("single-shot", "alone", "rollback", "chronobox", "full-alone", "full-chronobox")
 SETUP_LABELS = {
     "single-shot": "Single shot (no tools: one script, run once)",
@@ -27,7 +28,7 @@ SETUP_LABELS = {
     "full-chronobox": "Full Claude Code · chronobox",
 }
 INTERACTIVE = frozenset(SETUP_ORDER) - {"single-shot"}
-STRONG_MODELS = ("sonnet", "opus")
+STRONG_FAMILIES = ("sonnet", "opus")
 WORST_SHARE = 0.1
 
 
@@ -42,7 +43,6 @@ def load(sources: Iterable[Path]) -> list[dict[str, Any]]:
         for result, run_dir in _stored(source):
             if result.get("error") or result["scenario"] not in TASKS:
                 continue
-            result["model"] = result.get("model") or _model_from_dir(source)
             result["reward"] = rescore(result, TASKS[result["scenario"]])
             result["check_passed"] = result["reward"]["check_passed"]
             result["success"] = result["reward"]["success"]
@@ -62,11 +62,6 @@ def _stored(source: Path) -> Iterable[tuple[dict[str, Any], Path | None]]:
     if source.is_file():
         return [(result, None) for result in json.loads(source.read_text())]
     return [(json.loads(path.read_text()), path.parent) for path in sorted(source.glob("*/*/result.json"))]
-
-
-def _model_from_dir(root: Path) -> str:
-    tail = root.name.rsplit("-", 1)[-1]
-    return tail if tail in MODELS else MODELS[0]
 
 
 @dataclass(frozen=True)
@@ -120,8 +115,15 @@ def setups_in(results: list[dict[str, Any]]) -> list[str]:
 
 
 def models_in(results: list[dict[str, Any]]) -> list[str]:
-    present = {result["model"] for result in results}
-    return [model for model in MODELS if model in present]
+    return sorted({result["model"] for result in results}, key=lambda model: (_family_rank(model), model))
+
+
+def _family_rank(model: str) -> int:
+    return next((rank for rank, family in enumerate(MODEL_FAMILIES) if family in model), len(MODEL_FAMILIES))
+
+
+def _is_strong(model: str) -> bool:
+    return any(family in model for family in STRONG_FAMILIES)
 
 
 def hardest_tasks(results: list[dict[str, Any]]) -> list[str]:
@@ -130,6 +132,6 @@ def hardest_tasks(results: list[dict[str, Any]]) -> list[str]:
         {
             result["scenario"]
             for result in results
-            if result["model"] in STRONG_MODELS and result["condition"] in INTERACTIVE and not result["success"]
+            if _is_strong(result["model"]) and result["condition"] in INTERACTIVE and not result["success"]
         }
     )
