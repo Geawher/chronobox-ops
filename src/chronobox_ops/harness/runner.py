@@ -22,7 +22,8 @@ from typing import Any
 from chronobox import request
 from chronobox.workspace import MAIN
 
-from chronobox_ops.harness.agents import AgentOptions, extract_script, prepare, summarize_trace
+from chronobox_ops import claude_trace
+from chronobox_ops.harness.agents import AgentOptions, extract_script, prepare
 from chronobox_ops.harness.machine import FINISH_OP, GradeMode
 from chronobox_ops.harness.scheduler import ActiveRun, MemoryScheduler
 from chronobox_ops.harness.setups import SETUPS, AgentKind, Setup
@@ -147,7 +148,7 @@ class Run:
         finally:
             for step in launch.cleanup:
                 await step()
-        summary = summarize_trace(self.run_dir / "trace.jsonl")
+        summary = claude_trace.summarize(self.run_dir / "trace.jsonl")
         reply = summary.pop("reply")
         outcome = {**summary, "summary": reply[-REPLY_KEPT_CHARS:], "agent_timeout": timed_out,
                    "agent_s": round(time.time() - started, 1)}  # fmt: skip

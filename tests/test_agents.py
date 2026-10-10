@@ -1,7 +1,8 @@
 import json
 from pathlib import Path
 
-from chronobox_ops.harness.agents import AgentOptions, extract_script, prepare, summarize_trace
+from chronobox_ops.claude_trace import summarize
+from chronobox_ops.harness.agents import AgentOptions, extract_script, prepare
 from chronobox_ops.harness.setups import SETUPS
 
 OPTIONS = AgentOptions(model="haiku", max_usd=1.0)
@@ -27,7 +28,7 @@ def test_summarize_trace_counts_tools_and_reads_the_final_reply(tmp_path: Path) 
     ]
     trace = tmp_path / "trace.jsonl"
     trace.write_text("\n".join(json.dumps(event) for event in events))
-    summary = summarize_trace(trace)
+    summary = summarize(trace)
     assert summary["tools"] == {"run": 1, "fork": 1}
     assert summary["cost_usd"] == 0.05 and summary["reply"] == "done"
 

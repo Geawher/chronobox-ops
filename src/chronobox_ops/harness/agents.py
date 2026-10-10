@@ -24,9 +24,7 @@ import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
-from chronobox_ops import claude_trace
 from chronobox_ops.harness.setups import AgentKind, Setup
 
 MCP_TOOL_TIMEOUT_MS = "1800000"
@@ -143,10 +141,6 @@ async def _wait_for_port(host: str, port: int) -> None:
         writer.close()
         return
     raise RuntimeError(f"MCP front end did not listen on {host}:{port}")
-
-
-def summarize_trace(path: Path) -> dict[str, Any]:
-    return claude_trace.summarize(path)
 
 
 def extract_script(reply: str) -> str | None:
