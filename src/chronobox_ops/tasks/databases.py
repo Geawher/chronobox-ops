@@ -1168,8 +1168,10 @@ def tasks() -> list[Scenario]:
             fast_forward=BIG_FAST_FORWARD,
             observe=20.0,  # the checkouts cross INT_MAX ~3 s after the fast-forward
             reference=(BIG_REFERENCE, "python3 /tmp/widen.py"),
+            # One transaction: orders stays locked through both table rewrites (~6 s), longer
+            # than a checkout's retries (~3.6 s). Each rewrite alone (~3 s) sometimes fits in them.
             naive=(
-                "psql -v ON_ERROR_STOP=1 -d shop -U shop -h /run/postgresql "
+                "psql -1 -v ON_ERROR_STOP=1 -d shop -U shop -h /run/postgresql "
                 "-c 'alter table orders alter column id type bigint' "
                 "-c 'alter table order_items alter column order_id type bigint' "
                 "-c 'alter sequence orders_id_seq as bigint'",
