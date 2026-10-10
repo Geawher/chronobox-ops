@@ -4,11 +4,16 @@ from __future__ import annotations
 
 from chronobox_ops.scenario import Scenario
 from chronobox_ops.tasks import (
+    capacity,
+    data_cleanup,
     databases,
     discovery,
     hidden_config_hazards,
     hidden_upgrade_hazards,
     live_ops,
+    one_shot,
+    performance,
+    recovery,
     releases,
     reliability,
     security,
@@ -25,6 +30,11 @@ MODULES = (
     security,
     hidden_config_hazards,
     hidden_upgrade_hazards,
+    capacity,
+    performance,
+    data_cleanup,
+    one_shot,
+    recovery,
 )
 
 
