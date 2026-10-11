@@ -8,7 +8,7 @@ back). 3 seeds per task and setup, 1,081 runs, run on 2026-10-10/11.
 | | |
 |---|---|
 | Benchmark | chronobox-ops `48512be` (37 tasks) |
-| chronobox | `tool-guidance` `a9e9e9f` (tool descriptions: fork, try, then apply; a rollback loses users' writes) |
+| chronobox | `tool-guidance` `a9e9e9f`, merged unchanged into `main` as `f43aac7` (tool descriptions: fork, try, then apply; a rollback loses users' writes) |
 | Claude Code | 2.1.287, model fallback disabled (see below) |
 | Models | `claude-opus-5-5`, `claude-opus-4-8`, `claude-sonnet-5-5`, `claude-sonnet-5`, `claude-haiku-4-5-20251001` |
 | Limits per run | 30 min of agent time, $3 |
