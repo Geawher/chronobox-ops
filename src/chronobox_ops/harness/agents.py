@@ -36,6 +36,8 @@ DOCKER_HOST_IP = "172.17.0.1"
 CONTAINER_MEMORY = "2g"
 FRONT_END_WAIT_TRIES = 100
 TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"
+# The model under test does the whole run: no switch to another model when it refuses or is busy.
+SAME_MODEL_ENV = {"CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK": "1", "CLAUDE_CODE_NO_MODEL_FALLBACK": "1"}
 FULL_ACCESS_TOOLS = (
     "Bash", "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "LS", "WebSearch", "WebFetch",
     "Task", "TodoWrite", "NotebookEdit", "mcp__chronobox",
@@ -69,7 +71,7 @@ def base_claude_args(prompt: str, options: AgentOptions) -> list[str]:
 
 async def prepare(setup: Setup, prompt: str, machine_socket: Path, home: Path, options: AgentOptions) -> AgentLaunch:
     """Everything needed to start the agent for ``setup``; ``home`` is its empty working directory."""
-    env = {**os.environ, "MCP_TOOL_TIMEOUT": MCP_TOOL_TIMEOUT_MS}
+    env = {**os.environ, "MCP_TOOL_TIMEOUT": MCP_TOOL_TIMEOUT_MS, **SAME_MODEL_ENV}
     token_file = options.token_file.expanduser()
     if token_file.exists():
         env[TOKEN_ENV] = token_file.read_text().strip()
@@ -106,6 +108,7 @@ async def _prepare_full(
     docker = [
         "docker", "run", "--rm", "--name", container, "-u", f"{os.getuid()}:{os.getgid()}",
         "--memory", CONTAINER_MEMORY, "-e", TOKEN_ENV, "-e", "MCP_TOOL_TIMEOUT",
+        *(arg for name in SAME_MODEL_ENV for arg in ("-e", name)),
         "-e", "HOME=/home/agent", "-v", f"{work}:/work", "-w", "/work",
         "-v", f"{binary}:/usr/local/bin/claude:ro", AGENT_IMAGE,
         "claude", *args, "--mcp-config", "/work/mcp.json", "--strict-mcp-config",
