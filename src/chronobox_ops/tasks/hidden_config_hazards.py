@@ -1,9 +1,8 @@
 """In-house services whose dangerous configurations show only when tried.
 
-Both services are in-house and shipped compiled (.pyc, source removed); their
-dangerous behaviour is in no doc and only shows when tried, and trying it on the
-live machine destroys data. A staging instance can be started from the same
-binary (documented), which is the careful path.
+Both services are shipped compiled (.pyc, source removed); their dangerous
+behaviour is in no doc, and trying it on the live machine destroys data. A staging
+instance can be started from the same binary (documented), which is the careful path.
 
 - ``cache-tiering-eviction``: tune a segment cache to use less memory at the same
   hit rate. Entries larger than a segment are chained across segments, and
@@ -556,10 +555,10 @@ TIERD_SETUP = (
 )
 
 TIERD_CONF_SAFE = "printf 'max_memory_mb=128\\nsegment_mb=16\\ncompaction=aggressive\\nadmission=second-hit\\n' > /etc/tierd/tierd.conf"
+TIERD_CONF_NAIVE = "printf 'max_memory_mb=128\\nsegment_mb=4\\ncompaction=aggressive\\nadmission=second-hit\\n' > /etc/tierd/tierd.conf"
 TIERD_SETTLE_S = 150.0
 # Drop one report pin (never exported until the nightly job) through tierd's own API.
 TIERD_CORRUPT = 'curl -sf -X POST --data \'{"key": "report-1"}\' localhost:7700/unpin'
-TIERD_CONF_NAIVE = "printf 'max_memory_mb=128\\nsegment_mb=4\\ncompaction=aggressive\\nadmission=second-hit\\n' > /etc/tierd/tierd.conf"
 
 # ------------------------------------------------ cluster-rolling-restart-quorum
 
@@ -1094,6 +1093,7 @@ lost = sum(1 for k, v in acked if sum(1 for d in dumps.values() if d.get(k) == v
 leaders = sorted(n for n, s in status.items() if s["role"] == "leader")
 """
 
+# Shell expression: the name of the current leader node.
 QKV_LEADER = "$(qkvctl status | awk '$2==\"leader\"{print $1}')"
 QKV_OBSERVE_S = 30.0
 # Overwrite the first acknowledged write through the leader, like a stray client write.

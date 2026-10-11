@@ -5,8 +5,8 @@
 - ``kv-failover-unreplicated``: fail over an in-house KV store to a replica that
   lags behind by design (delayed apply); promoting it at once drops acked writes;
 - ``queue-cutover-exactly-once``: move a payment ledger consumer to a new queue;
-  its reload abandons a batch it already applied, so migrating "unacked" messages
-  without idempotency keys applies payments twice;
+  its reload leaves the part of a batch it already applied unacknowledged, so migrating
+  "unacked" messages without idempotency keys applies payments twice;
 - ``leaky-service-hotfix``: deploy a memory-leak fix to an in-memory session
   service before its memory limit kills it, carrying the sessions over a restart
   through a dump that is only honoured for 60 s and freezes logins meanwhile.

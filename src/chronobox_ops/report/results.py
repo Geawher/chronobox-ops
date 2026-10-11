@@ -122,6 +122,17 @@ def models_in(results: list[dict[str, Any]]) -> list[str]:
     return sorted({result["model"] for result in results}, key=lambda model: (_family_rank(model), model))
 
 
+def model_setup_cells(results: list[dict[str, Any]], min_runs: int = 1) -> list[tuple[str, str, Cell]]:
+    """One aggregate per model × setup with at least ``min_runs`` runs, in report order."""
+    cells = []
+    for model in models_in(results):
+        for setup in setups_in(results):
+            cell = Cell.of(select(results, model=model, setup=setup))
+            if cell is not None and cell.runs >= min_runs:
+                cells.append((model, setup, cell))
+    return cells
+
+
 def _family_rank(model: str) -> int:
     return next((rank for rank, family in enumerate(MODEL_FAMILIES) if family in model), len(MODEL_FAMILIES))
 

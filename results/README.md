@@ -3,7 +3,8 @@
 Five Claude models, each run as a full Claude Code (its own tools, in a sandbox container)
 on every task, **alone** (`full-alone`: it reaches the machine through `run` / `wait`) and
 **with chronobox** (`full-chronobox`: it can also fork the live machine, checkpoint and roll
-back). 3 seeds per task and setup, 1,081 runs, run on 2026-10-10/11.
+back). 3 seeds per task and setup (fewer on the CTF tasks, see below), 1,081 runs, run on
+2026-10-10/11.
 
 | | |
 |---|---|
@@ -18,7 +19,8 @@ Files: [`tables.md`](tables.md) (leaderboard, damage, per task, tool use; 34 tas
 [`analysis.md`](analysis.md) (chronobox effect with confidence intervals; CTF table),
 [`report.html`](report.html), [`tables-all-37-tasks.md`](tables-all-37-tasks.md), and
 [`results.json`](results.json) (every run's scores, without transcripts:
-`chronobox-ops report results/results.json` rebuilds the tables).
+`chronobox-ops report results/results.json --markdown FILE` rebuilds
+`tables-all-37-tasks.md`, and `tables.md` from the same runs without the CTF tasks).
 
 ## Leaderboard (34 tasks)
 
@@ -66,9 +68,9 @@ exclude 0.
   kv-compaction-tombstones (Sonnet 5.5 0/3 → 3/3), jobq-tuning (Sonnet 5.5 0/3 → 3/3),
   perf-regression-bisect, vacuum-full-bloat, native-ext-upgrade and db-add-index.
 - **Where it does not help, or costs**: pg-int-to-bigint (Opus 5.5 3/3 → 1/3, Opus 4.8
-  2/3 → 1/3; a timing-sensitive migration that most setups fail on most seeds), dedupe-customers (a
-  judgment about which customers are the same person, which a fork does not reveal), and
-  a few single-seed losses elsewhere.
+  2/3 → 1/3; a timing-sensitive migration that most setups fail on most seeds),
+  dedupe-customers (a judgment about which customers are the same person, which a fork
+  does not reveal), and a few single-seed losses elsewhere.
 - **Rollbacks**: only Haiku 4.5 rolled back (28 times), throwing away 1,156 acknowledged
   user writes in 3 runs; no other model rolled back once, as the tool descriptions advise.
 

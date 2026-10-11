@@ -214,7 +214,7 @@ async def validate_all(
     scheduler = MemoryScheduler()
     root = Path(tempfile.mkdtemp(prefix="cbx-validate-"))
     earlier = _logged(log) if resume and log is not None else []
-    finished = {(a.task, a.mode, a.round) for a in earlier}
+    finished = {(attempt.task, attempt.mode, attempt.round) for attempt in earlier}
     units = [
         (name, mode, round_)
         for round_ in range(repeat)
@@ -240,7 +240,10 @@ async def validate_all(
         attempts = [*earlier, *await asyncio.gather(*(one(*unit) for unit in units))]
     finally:
         shutil.rmtree(root, ignore_errors=True)
-    return {name: [p for a in attempts if a.task == name for p in a.problems()] for name in names}
+    return {
+        name: [problem for attempt in attempts if attempt.task == name for problem in attempt.problems()]
+        for name in names
+    }
 
 
 def _logged(log: Path) -> list[Attempt]:

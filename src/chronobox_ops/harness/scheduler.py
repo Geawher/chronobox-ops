@@ -32,6 +32,8 @@ def available_mib() -> int:
 
 @dataclass
 class ActiveRun:
+    """A run in progress, with the processes the watchdog kills when it stops the run."""
+
     name: str
     started: float = field(default_factory=time.time)
     processes: list[asyncio.subprocess.Process] = field(default_factory=list)
@@ -45,6 +47,8 @@ class ActiveRun:
 
 
 class MemoryScheduler:
+    """Admits runs while memory allows, and stops the newest when free memory gets low."""
+
     def __init__(self) -> None:
         self.active: list[ActiveRun] = []
 

@@ -35,7 +35,7 @@ INDEX_SEED_EMAIL = "md5(customer_id::text) || '@shop.test'"
 
 
 def seed_orders_sql(rows: int, email: str) -> str:
-    """Seed rows (all, intact, distinct intact customers); missing or changed = rows - the last."""
+    """SQL counting the seed orders: all of them, the intact ones, and distinct customers among those."""
     intact = f"customer_email = {email} and item = 'widget' and qty = 1 and customer_id between 1 and {rows}"
     return (
         f"select count(*), count(*) filter (where {intact}), count(distinct customer_id) filter (where {intact}) "
@@ -50,6 +50,7 @@ def damaged_seed_orders(rows: int) -> str:
 
 def shop_probe(seed_sql: str = "", seed_rows: int = 0) -> str:
     """Failed checkouts, acknowledged orders missing or changed, and (optionally) seed damage."""
+    # The second line is indented like ``{seed}`` in the template, so that dedent keeps both aligned.
     seed = (
         f"total, intact, distinct = c.execute({seed_sql!r}).fetchone()\n"
         f"{' ' * 16}out['lost_seed_orders'] = {damaged_seed_orders(seed_rows)}"

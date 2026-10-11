@@ -8,7 +8,15 @@ from pathlib import Path
 from typing import Any
 
 from chronobox_ops import claude_trace
-from chronobox_ops.report.results import SETUP_LABELS, SETUP_ORDER, Cell, models_in, select, setups_in
+from chronobox_ops.report.results import (
+    SETUP_LABELS,
+    SETUP_ORDER,
+    Cell,
+    model_setup_cells,
+    models_in,
+    select,
+    setups_in,
+)
 
 CHART_WIDTH = 760
 CHART_ROW = 26
@@ -62,19 +70,14 @@ def render(results: list[dict[str, Any]], title: str) -> str:
 
 
 def _leaderboard(results: list[dict[str, Any]]) -> str:
-    rows = []
-    for model in models_in(results):
-        for setup in setups_in(results):
-            cell = Cell.of(select(results, model=model, setup=setup))
-            if cell is None:
-                continue
-            rows.append(
-                f"<tr><td>{model}</td><td>{html.escape(SETUP_LABELS[setup])}</td>"
-                f"<td class='num'>{cell.runs}</td><td class='num'>{cell.successes / cell.runs:.0%}</td>"
-                f"<td class='num'>{cell.harmed / cell.runs:.0%}</td>"
-                f"<td class='num'>{cell.checks_passed / cell.runs:.0%}</td><td class='num'>${cell.cost_usd:.2f}</td>"
-                f"<td class='num'>{cell.seconds / 60:.0f} min</td></tr>"
-            )
+    rows = [
+        f"<tr><td>{model}</td><td>{html.escape(SETUP_LABELS[setup])}</td>"
+        f"<td class='num'>{cell.runs}</td><td class='num'>{cell.successes / cell.runs:.0%}</td>"
+        f"<td class='num'>{cell.harmed / cell.runs:.0%}</td>"
+        f"<td class='num'>{cell.checks_passed / cell.runs:.0%}</td><td class='num'>${cell.cost_usd:.2f}</td>"
+        f"<td class='num'>{cell.seconds / 60:.0f} min</td></tr>"
+        for model, setup, cell in model_setup_cells(results)
+    ]
     head = ("<tr><th>Model</th><th>Setup</th><th class='num'>Runs</th><th class='num'>Success</th>"
             "<th class='num'>Harmed users</th><th class='num'>Check passed</th>"
             "<th class='num'>Cost / run</th><th class='num'>Time / run</th></tr>")  # fmt: skip
@@ -86,19 +89,15 @@ def _damage(results: list[dict[str, Any]]) -> str:
         return f"{count} ({count / runs:.0%})" if count else "0"
 
     rows = []
-    for model in models_in(results):
-        for setup in setups_in(results):
-            cell = Cell.of(select(results, model=model, setup=setup))
-            if cell is None:
-                continue
-            n = cell.runs
-            rows.append(
-                f"<tr><td>{html.escape(model)}</td><td>{html.escape(SETUP_LABELS[setup])}</td><td class='num'>{n}</td>"
-                f"<td class='num'>{share(cell.failed_request_runs, n)}</td>"
-                f"<td class='num'>{share(cell.discarded_write_runs, n)}</td>"
-                f"<td class='num'>{share(cell.data_harm, n)}</td><td class='num'>{share(cell.clients_stopped, n)}</td>"
-                f"<td class='num'>{share(cell.tampered, n)}</td></tr>"
-            )
+    for model, setup, cell in model_setup_cells(results):
+        n = cell.runs
+        rows.append(
+            f"<tr><td>{html.escape(model)}</td><td>{html.escape(SETUP_LABELS[setup])}</td><td class='num'>{n}</td>"
+            f"<td class='num'>{share(cell.failed_request_runs, n)}</td>"
+            f"<td class='num'>{share(cell.discarded_write_runs, n)}</td>"
+            f"<td class='num'>{share(cell.data_harm, n)}</td><td class='num'>{share(cell.clients_stopped, n)}</td>"
+            f"<td class='num'>{share(cell.tampered, n)}</td></tr>"
+        )
     head = ("<tr><th>Model</th><th>Setup</th><th class='num'>Runs</th><th class='num'>Failed requests</th>"
             "<th class='num'>Writes thrown away</th><th class='num'>Data lost or changed</th>"
             "<th class='num'>Clients stopped</th><th class='num'>Tampering</th></tr>")  # fmt: skip

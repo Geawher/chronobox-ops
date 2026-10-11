@@ -27,7 +27,7 @@ In-house software, so the pitfalls are in no training data: found only by trying
 
 | Task | The job | What makes it hard |
 |---|---|---|
-| `ledger-migrate` | Migrate a ledger's database with its own admin tool | Some old amounts use a decimal comma, which the migration mishandles |
+| `ledger-migrate` | Migrate a ledger's database with its own admin tool | Some old amounts use a decimal comma: the migration silently drops those entries |
 | `jobq-tuning` | Tune a job queue | Some documented settings crash it |
 
 ## Upgrades — `upgrades.py`

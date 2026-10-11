@@ -3,7 +3,7 @@
 - ``git-secret-purge``: purge a leaked key from every branch and tag of a repository
   whose checkout holds uncommitted work and a stash;
 - ``pinned-deps-conflict``: a security fix needs a new major of a transitive in-house
-  library; the compatible parent library silently changes its TTL unit;
+  library; the compatible parent library changes its session TTL from seconds to minutes;
 - ``release-cutover``: switch a symlinked release to v2 with a state migration, live
   writes, and a periodic export job that reads the state where v1 kept it;
 - ``rolling-protocol-upgrade``: rolling upgrade of a 3-node replicated store behind a
@@ -327,10 +327,12 @@ Wheels are in /opt/wheelhouse (this machine has no internet access).
 
 
 def _wheel(src: str, dist: str, version: str, files: dict[str, str], deps: list[str]) -> str:
-    parts = [f"mkdir -p {src}/{next(iter(files)).split('/')[0]}"]
+    """Shell commands writing the source tree of wheel ``dist`` (one package, ``files``) under ``src``."""
+    module = next(iter(files)).split("/")[0]
+    parts = [f"mkdir -p {src}/{module}"]
     for path, code in files.items():
         parts.append(f"cat > {src}/{path} <<'PY'\n{textwrap.dedent(code).strip()}\nPY")
-    module = next(iter(files)).split("/")[0]
+    # .replace turns the repr of `deps` into a TOML array (double quotes)
     parts.append(
         f"cat > {src}/pyproject.toml <<'TOML'\n[build-system]\nrequires = [\"setuptools\"]\n"
         f'build-backend = "setuptools.build_meta"\n[project]\nname = "{dist}"\n'
@@ -338,7 +340,7 @@ def _wheel(src: str, dist: str, version: str, files: dict[str, str], deps: list[
             "'", '"'
         )
     )
-    return parts[0] + "\n" + "\n".join(parts[1:])
+    return "\n".join(parts)
 
 
 AUTH_APP = """

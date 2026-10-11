@@ -19,7 +19,14 @@ from chronobox_ops.tasks._shared import PG_START, SHOP_DSN, python_service, supe
 
 
 def _seed_changed_sql(table: str, key: str, rows: int, columns: dict[str, str]) -> str:
-    """SQL counting seed rows (keyed ``key`` = f(g), g = 1..rows) missing or no longer as seeded."""
+    """SQL counting the seed rows of ``table`` that are missing or no longer hold their seeded values.
+
+    Args:
+        table: Table holding the seed rows.
+        key: ``"<column> = <SQL expression of g>"``: how seed row g (1..rows) is found.
+        rows: Number of seed rows.
+        columns: Seeded column -> its value as an SQL expression of g.
+    """
     key_column, key_expr = key.split("=")
     same = " and ".join(f"t.{column} = {expr}" for column, expr in columns.items())
     return (
@@ -268,7 +275,7 @@ BACKFILL_REFERENCE = write_file(
 
 CRM_DSN = "dbname=crm user=crm host=/run/postgresql"
 CRM_SEED_ROWS = 50_000
-FIRST = [
+CRM_FIRST = [
     "Alice",
     "Bruno",
     "Chloe",
@@ -282,7 +289,7 @@ FIRST = [
     "Kenji",
     "Lena",
 ]
-LAST = [
+CRM_LAST = [
     "Martin",
     "Novak",
     "Okafor",
@@ -296,8 +303,8 @@ LAST = [
     "Weber",
 ]
 _SEED_NAME_SQL = (
-    f"(array[{','.join(repr(n) for n in FIRST)}])[1 + id % {len(FIRST)}] || ' ' || "
-    f"(array[{','.join(repr(n) for n in LAST)}])[1 + (id * 7) % {len(LAST)}]"
+    f"(array[{','.join(repr(n) for n in CRM_FIRST)}])[1 + id % {len(CRM_FIRST)}] || ' ' || "
+    f"(array[{','.join(repr(n) for n in CRM_LAST)}])[1 + (id * 7) % {len(CRM_LAST)}]"
 )
 
 CRM_SEED = f"""
@@ -398,8 +405,8 @@ CRM_SERVICE = f"""
 
 CRM_CLIENT = f"""
     import json, os, random, time, urllib.request
-    FIRST = {FIRST!r}
-    LAST = {LAST!r}
+    FIRST = {CRM_FIRST!r}
+    LAST = {CRM_LAST!r}
     def seed_name(i):
         return f"{{FIRST[i % len(FIRST)]}} {{LAST[(i * 7) % len(LAST)]}}"
     STATE = "/var/lib/crm-client/state.json"

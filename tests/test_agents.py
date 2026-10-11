@@ -18,15 +18,12 @@ def test_extract_script_takes_the_last_bash_block() -> None:
 
 
 def test_summarize_trace_counts_tools_and_reads_the_final_reply(tmp_path: Path) -> None:
+    def tool_call(name: str) -> dict:
+        return {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": name, "input": {}}]}}
+
     events = [
-        {
-            "type": "assistant",
-            "message": {"content": [{"type": "tool_use", "name": "mcp__chronobox__run", "input": {}}]},
-        },
-        {
-            "type": "assistant",
-            "message": {"content": [{"type": "tool_use", "name": "mcp__chronobox__fork", "input": {}}]},
-        },
+        tool_call("mcp__chronobox__run"),
+        tool_call("mcp__chronobox__fork"),
         {"type": "result", "total_cost_usd": 0.05, "num_turns": 3, "result": "done", "is_error": False},
     ]
     trace = tmp_path / "trace.jsonl"

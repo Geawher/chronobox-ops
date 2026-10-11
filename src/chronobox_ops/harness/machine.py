@@ -303,7 +303,7 @@ class ScenarioMachine:
         # One read: clients keep appending, so size and hash must come from the same bytes.
         command = f"{prefix}s=$(stat -c %s {path}) && echo $s && head -c $s {path} | sha256sum"
         code, output = await machine.run(command, PROBE_TIMEOUT_S, isolated=True)
-        parts = output.split()
+        parts = output.split()  # [hash of the previously seen prefix,] size, hash, "-"
         if code != 0 or len(parts) < (3 if previous else 2):
             if previous:
                 ledger.tampering.append(f"{path} disappeared")
@@ -321,6 +321,7 @@ def machine_key(machine: Machine) -> str:
 
 
 def last_json_line(output: str) -> dict[str, Any] | None:
+    """The JSON object on the last line of ``output``; None if that line is not one."""
     lines = output.strip().splitlines()
     if not lines:
         return None

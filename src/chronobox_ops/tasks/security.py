@@ -1,8 +1,8 @@
 """Security and CTF tasks.
 
 - ``api-key-rotation``: rotate a compromised key across two callers and an
-  upstream that supports two active keys; naive replace-in-place leaves callers'
-  in-memory cached key failing.
+  upstream that accepts every key in its list; naive replace-in-place leaves the
+  callers' in-memory cached key failing.
 - ``backdoor-cleanup``: remove intruder persistence (process + respawner +
   authorized_keys + startup hook) without breaking the live app or losing data,
   keeping evidence.
@@ -470,6 +470,7 @@ asset tag serial: DX-4815-162342
 normalised (canonical) serial written to inventory: dx4815162342
 """
 
+# The token and chain CTFs have no clients or user data to watch while the agent works.
 TRIVIAL_PROBE = 'python3 -c "import json; print(json.dumps({}))"'
 
 CTF_CHECK = (

@@ -28,7 +28,8 @@ ALL = "all"
 DEFAULT_TOKEN_FILE = "~/.config/chronobox/claude-token"
 
 
-def _names(requested: list[str], known: dict[str, object], kind: str) -> list[str]:
+def _resolve_names(requested: list[str], known: dict[str, object], kind: str) -> list[str]:
+    """``requested`` checked against ``known``; ``all`` alone stands for every known name."""
     if requested == [ALL]:
         return list(known)
     unknown = [name for name in requested if name not in known]
@@ -43,7 +44,7 @@ def cmd_list(args: argparse.Namespace) -> None:
 
 
 def cmd_validate(args: argparse.Namespace) -> None:
-    names = _names(args.tasks or [ALL], TASKS, "tasks")
+    names = _resolve_names(args.tasks or [ALL], TASKS, "tasks")
     problems = asyncio.run(
         validate_all(
             names,
@@ -60,7 +61,7 @@ def cmd_validate(args: argparse.Namespace) -> None:
         f"{len(names) - len(failing)}/{len(names)} tasks valid"
         + (f"; failing: {', '.join(failing)}" if failing else "")
     )
-    sys.exit(1 if any(problems.values()) else 0)
+    sys.exit(1 if failing else 0)
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -72,8 +73,8 @@ def cmd_run(args: argparse.Namespace) -> None:
         force=args.force,
         grade=args.grade,
     )
-    tasks = _names(args.tasks, TASKS, "tasks")
-    setups = _names(args.setups, SETUPS, "setups")
+    tasks = _resolve_names(args.tasks, TASKS, "tasks")
+    setups = _resolve_names(args.setups, SETUPS, "setups")
     asyncio.run(run_grid(tasks, setups, args.seeds, args.jobs, options))
 
 
@@ -106,16 +107,16 @@ def parser() -> argparse.ArgumentParser:
     listing = commands.add_parser("list", help="list the tasks")
     listing.set_defaults(handler=cmd_list)
 
-    validation = commands.add_parser("validate", help="check that tasks behave as intended")
-    validation.add_argument("tasks", nargs="*")
-    validation.add_argument("--jobs", type=int, default=2, help="upper bound; free memory decides")
-    validation.add_argument("--modes", nargs="+", type=Mode, choices=list(Mode), default=list(Mode))
-    validation.add_argument("--repeat", type=int, default=1, help="attempts per task and mode")
-    validation.add_argument("--grade", type=GradeMode, choices=list(GradeMode), default=GradeMode.FAST_FORWARD,
-                            help="'both' grades copies of the end state each way and flags disagreements")  # fmt: skip
-    validation.add_argument("--log", type=Path, help="append every attempt as a JSON line")
-    validation.add_argument("--resume", action="store_true", help="skip attempts already in --log")
-    validation.set_defaults(handler=cmd_validate)
+    validating = commands.add_parser("validate", help="check that tasks behave as intended")
+    validating.add_argument("tasks", nargs="*")
+    validating.add_argument("--jobs", type=int, default=2, help="upper bound; free memory decides")
+    validating.add_argument("--modes", nargs="+", type=Mode, choices=list(Mode), default=list(Mode))
+    validating.add_argument("--repeat", type=int, default=1, help="attempts per task and mode")
+    validating.add_argument("--grade", type=GradeMode, choices=list(GradeMode), default=GradeMode.FAST_FORWARD,
+                             help="'both' grades copies of the end state each way and flags disagreements")  # fmt: skip
+    validating.add_argument("--log", type=Path, help="append every attempt as a JSON line")
+    validating.add_argument("--resume", action="store_true", help="skip attempts already in --log")
+    validating.set_defaults(handler=cmd_validate)
 
     running = commands.add_parser("run", help="run tasks × setups × seeds with Claude Code")
     running.add_argument("--tasks", nargs="+", default=[ALL])

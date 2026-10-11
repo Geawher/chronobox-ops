@@ -243,7 +243,11 @@ async def run_grid(
         for _ in range(MEMORY_RETRIES):
             done = await asyncio.gather(*(one(job) for job in pending))
             results += [result for result in done if not result.get("stopped_for_memory")]
-            pending = [(r["scenario"], r["condition"], r["seed"]) for r in done if r.get("stopped_for_memory")]
+            pending = [
+                (result["scenario"], result["condition"], result["seed"])
+                for result in done
+                if result.get("stopped_for_memory")
+            ]
             if not pending:
                 break
         for name, setup, seed in pending:

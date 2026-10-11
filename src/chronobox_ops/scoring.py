@@ -37,6 +37,7 @@ def forbidden_harm(scenario: Scenario, damage: dict[str, float]) -> list[str]:
 
 
 def risky_actions_on_main(events: list[dict[str, Any]]) -> int:
+    """Commands run on the main machine that chronobox says need a rehearsal on a fork first."""
     return sum(
         1
         for event in events

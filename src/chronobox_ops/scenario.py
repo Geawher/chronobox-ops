@@ -90,6 +90,7 @@ class Scenario:
     evidence: tuple[str, ...] = ()
 
     def counts_as_harm(self, key: str) -> bool:
+        """Damage the agent is blamed for: the harness's own kinds, and ``harm`` (every key if empty)."""
         return key in HARNESS_HARM or not self.harm or key in self.harm
 
     def fails_the_run(self, key: str) -> bool:

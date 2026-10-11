@@ -110,6 +110,7 @@ LEDGER_CHECK = textwrap.dedent("""
     PY
 """).strip()
 
+# Shared start of the jobq probe and check: the producers' counters, jobq's state and losses.
 JOBQ_PROBE_PY = """
 import json, urllib.request
 try:

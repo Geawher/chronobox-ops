@@ -533,8 +533,10 @@ PAY_CHECK = (
 
 PAY_PROBE = PAY_AUDIT + "print(json.dumps(out))\nPY"
 
-# Charge what payd has not seen, by reference: settled charges (the listing) plus the open
-# bank file; `--items` keeps billrun from touching the progress file's idea of the batch.
+# Charge the batch items payd has not seen, by reference. The listing shows only settled
+# charges: the reference also counts the debits waiting in the open bank file
+# (INCLUDE_PENDING), the naive fix does not. `--items` keeps billrun from touching the
+# progress file's idea of the batch.
 PAY_MISSING = """
 import csv, json, subprocess, urllib.request
 def get(path):
@@ -1088,6 +1090,8 @@ SEGKV_CLIENT = r"""
         time.sleep(0.3)
 """
 
+# Every seed key deleted must stay deleted and every live one keep its value; the same for
+# the apps' acknowledged writes and deletes.
 KV_AUDIT = """
 python3 - <<'PY'
 import json, os, sys, urllib.request

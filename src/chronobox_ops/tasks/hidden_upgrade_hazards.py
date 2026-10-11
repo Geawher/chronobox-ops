@@ -419,6 +419,8 @@ print(json.dumps({"success": ok, "installed": installed, "served": served, "wron
 PY
 """.strip()
 
+# Reference cutover: hold the supervisor so idxsvc stays down while every index is converted
+# with the step from its own header, then let it start again on 2.0.0.
 IDX_CUTOVER = (
     "S=$(pgrep -f 'sbin/idxsvc-[s]upervisor'); kill -STOP $S; pkill -f 'idxsvc/[a]pp.py'; sleep 0.3; "
     "/opt/idxsvc/.venv/bin/vecstore-convert --v1-scale header /srv/idx/*.vsi; kill -CONT $S; "
@@ -494,6 +496,7 @@ BILL_SCHEDULE = (
     + ' from subscriptions where id = 1" > /var/lib/billing-audit/schedule'
 )
 
+# A seed subscription's fields that nothing may change (the billing schedule moves on its own).
 BILL_SEED_FIELDS = "concat_ws('|', {customer}, plan_cents, tax_rate, created_at)"
 
 BILL_EXPECTED = (
@@ -808,6 +811,7 @@ PY
     .replace("__FIRST_OFFSET__", BILL_FIRST_OFFSET.format(id="g").replace("%", "%%"))  # psycopg parameters
 )
 
+# Reference fix: keep the trigger's pre-2025 rule (tax included in the plan price).
 BILL_FIX = """
 psql -v ON_ERROR_STOP=1 -d billing -U billing -h /run/postgresql <<'SQL'
 create or replace function subscriptions_amount_due() returns trigger language plpgsql as $f$
@@ -821,8 +825,8 @@ SQL
 """.strip()
 
 # Grader only: start billing-loop's next run now instead of after its 2-minute pause, once
-# a period's worth of pre-2025 taxed subscriptions are due (about 30 come due in every
-# natural period; at most one period is waited), then wait for the run's first charge.
+# BILL_FF_DUE pre-2025 taxed subscriptions are due (about 30 come due in every natural
+# period; at most one period is waited), then wait for the run's first charge.
 # If the loop no longer runs, wait as long as the check's billing window, so the check
 # sees billing stopped exactly as natural grading does.
 BILL_FF_DUE = 10

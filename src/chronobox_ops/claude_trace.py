@@ -53,7 +53,7 @@ def summarize(path: Path) -> dict[str, Any]:
         "tools": dict(Counter(tools)),
         "cost_usd": final.get("total_cost_usd"),
         "turns": final.get("num_turns"),
-        "agent_error": final.get("is_error", not final),
+        "agent_error": final.get("is_error", not final),  # no result event: the agent never finished
         "reply": final.get("result") or "",
     }
 

@@ -55,6 +55,8 @@ class AgentOptions:
 
 @dataclass
 class AgentLaunch:
+    """How to start the agent; ``cleanup`` runs once it stopped, ``helpers`` are killed with the run on low memory."""
+
     command: list[str]
     env: dict[str, str]
     cleanup: list[Callable[[], Awaitable[None]]] = field(default_factory=list)

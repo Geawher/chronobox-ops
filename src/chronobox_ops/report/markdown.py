@@ -5,7 +5,7 @@ from __future__ import annotations
 from statistics import fmean
 from typing import Any
 
-from chronobox_ops.report.results import SETUP_LABELS, Cell, models_in, select, setups_in, tasks_in
+from chronobox_ops.report.results import SETUP_LABELS, model_setup_cells, select, tasks_in
 
 LEADERBOARD_MIN_RUNS = 5
 
@@ -16,16 +16,6 @@ def _share(count: int, runs: int) -> str:
 
 def _with_total(count: int, runs: int, total: float) -> str:
     return f"{_share(count, runs)}, {total:g} in total" if count else "0"
-
-
-def _cells(results: list[dict[str, Any]], min_runs: int = 1) -> list[tuple[str, str, Cell]]:
-    cells = []
-    for model in models_in(results):
-        for setup in setups_in(results):
-            cell = Cell.of(select(results, model=model, setup=setup))
-            if cell is not None and cell.runs >= min_runs:
-                cells.append((model, setup, cell))
-    return cells
 
 
 def leaderboard(results: list[dict[str, Any]]) -> str:
@@ -39,7 +29,7 @@ def leaderboard(results: list[dict[str, Any]]) -> str:
         "| Model | Setup | Runs | Success | Harmed users | Check passed | Cost / run | Time / run |",
         "|---|---|---|---|---|---|---|---|",
     ]
-    for model, setup, cell in _cells(results, LEADERBOARD_MIN_RUNS):
+    for model, setup, cell in model_setup_cells(results, LEADERBOARD_MIN_RUNS):
         lines.append(
             f"| {model} | {SETUP_LABELS[setup]} | {cell.runs} | {cell.successes / cell.runs:.0%} | "
             f"{cell.harmed / cell.runs:.0%} | {cell.checks_passed / cell.runs:.0%} | "
@@ -55,7 +45,7 @@ def damage(results: list[dict[str, Any]]) -> str:
         "| Tampering |",
         "|---|---|---|---|---|---|---|",
     ]
-    for model, setup, cell in _cells(results):
+    for model, setup, cell in model_setup_cells(results):
         n = cell.runs
         lines.append(
             f"| {model} · {setup} | {n} | {_with_total(cell.failed_request_runs, n, cell.failed_requests)} | "
@@ -76,7 +66,7 @@ def per_task(results: list[dict[str, Any]]) -> str:
 
     ✓ success · ✗ task not done (no forbidden harm) · harm: forbidden harm or tampering.
     """
-    columns = [(model, setup) for model, setup, _ in _cells(results)]
+    columns = [(model, setup) for model, setup, _ in model_setup_cells(results)]
     lines = [
         "| Task | " + " | ".join(f"{model} · {setup}" for model, setup in columns) + " |",
         "|---|" + "---|" * len(columns),
@@ -84,11 +74,15 @@ def per_task(results: list[dict[str, Any]]) -> str:
     for task in tasks_in(results):
         row = []
         for model, setup in columns:
-            runs = sorted(select(results, model=model, setup=setup, tasks=[task]), key=lambda r: r["seed"])
-            wins = sum(bool(r["success"]) for r in runs)
+            runs = sorted(select(results, model=model, setup=setup, tasks=[task]), key=lambda run: run["seed"])
+            wins = sum(bool(run["success"]) for run in runs)
             row.append(f"{wins}/{len(runs)} ({' '.join(map(_verdict, runs))})" if runs else "–")
         lines.append(f"| {task} | " + " | ".join(row) + " |")
     return "\n".join(lines) + "\n"
+
+
+def _calls_per_run(runs: list[dict[str, Any]], tool: str) -> float:
+    return fmean(run.get("tools", {}).get(tool, 0) for run in runs)
 
 
 def tool_use(results: list[dict[str, Any]]) -> str:
@@ -96,15 +90,15 @@ def tool_use(results: list[dict[str, Any]]) -> str:
         "| Model · setup | Commands | Risky on main | Forks | Rollbacks | Promotes |",
         "|---|---|---|---|---|---|",
     ]
-    for model, setup, _ in _cells(results):
+    for model, setup, _ in model_setup_cells(results):
         runs = select(results, model=model, setup=setup)
-
-        def per_run(tool: str, runs: list[dict[str, Any]] = runs) -> float:
-            return fmean(r.get("tools", {}).get(tool, 0) for r in runs)
-
-        risky = fmean(r["reward"]["risky_actions_on_main"] for r in runs)
-        lines.append(f"| {model} · {setup} | {per_run('run'):.1f} | {risky:.1f} | {per_run('fork'):.1f} | "
-                     f"{per_run('rollback'):.1f} | {per_run('promote'):.1f} |")  # fmt: skip
+        commands, forks, rollbacks, promotes = (
+            _calls_per_run(runs, tool) for tool in ("run", "fork", "rollback", "promote")
+        )
+        risky = fmean(run["reward"]["risky_actions_on_main"] for run in runs)
+        lines.append(
+            f"| {model} · {setup} | {commands:.1f} | {risky:.1f} | {forks:.1f} | {rollbacks:.1f} | {promotes:.1f} |"
+        )
     return "\n".join(lines) + "\n"
 
 

@@ -402,7 +402,7 @@ def dedupe_customers() -> Scenario:
 # ============================================================= vacuum-full-bloat
 
 EVENTS = 2_070_000  # seed events, one every 4 seconds over 96 days
-EVENTS_PURGED_UP_TO = 1_842_300  # the retention purge deleted the events older than ~11 days before the last
+EVENTS_PURGED_UP_TO = 1_842_300  # the retention purge kept only the last ~11 days of events
 EVENTS_KEPT = EVENTS - EVENTS_PURGED_UP_TO
 VOLUME_FREE_MB = 90  # free space on the volume after setup
 VOLUME = "/var/lib/postgresql"

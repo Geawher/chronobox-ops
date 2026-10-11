@@ -19,11 +19,11 @@ the same binary, which is the careful path without a fork.
   restart (kvd takes ~10 s to start: requests fail).
 - ``gc-pause-tuning``: the session tracker ``sessiond`` has 850 ms stop-the-world GC
   pauses. ``gc=concurrent`` (documented "a few ms" pauses) fixes the latency at once,
-  but the concurrent collector never reclaims dead large objects: the session
-  snapshots in the real traffic pile up, and after ~4 minutes (or at once, when the
-  5-minute rollup job allocates its large buffers) a concurrent mode failure makes a
-  15 s serial collection, the watchdog kills sessiond, and every open session (memory
-  only) is lost. A larger heap (the other obvious fix) is killed by the memory limit.
+  but its cycles never reclaim dead large objects: the session snapshots in the real
+  traffic pile up, and after ~4 minutes (or at once, when the 5-minute rollup job
+  allocates its large buffers) the old generation is full and a ~15 s serial collection
+  runs, the watchdog kills sessiond, and every open session (memory only) is lost. A
+  larger heap (the other obvious fix) is killed by the memory limit.
   ``gc=incremental`` with slices of 15-40 ms is safe (its default 80 ms slices are too
   long for the target; 50 ms lands on the target itself, and 10 ms or less may not keep up
   and fall back to full pauses).
@@ -616,7 +616,7 @@ while True:
     time.sleep(0.25)
 """
 
-# Every seed profile and every acknowledged note must be stored once with the exact value.
+# Every seed profile and every acknowledged note must still be stored with its exact value.
 # The acked log is read before kvd: every note it lists was stored before it was logged.
 KVD_AUDIT = r"""
 python3 - <<'PY'
@@ -710,6 +710,7 @@ KVD_SETUP = (
     "sleep 25 && kvctl status | head -12",
 )
 
+# Overwrite the first acknowledged note.
 KVD_CORRUPT = (
     "k=$(head -n 1 /var/lib/kvd-app/acked.log | cut -d' ' -f1) && "
     "curl -sf -X PUT --data-binary 'note lost in a migration' http://127.0.0.1:7300/v/$k"

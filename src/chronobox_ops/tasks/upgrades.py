@@ -6,7 +6,7 @@
 - ``db-engine-migration``: move a live app from SQLite to PostgreSQL; the data
   has mixed formats and clients keep writing during the cutover.
 
-All offline: wheels are built locally from bundled sources at setup.
+All offline: ``lib-upgrade`` builds its wheels at setup from sources bundled here.
 """
 
 from __future__ import annotations
@@ -79,7 +79,8 @@ Wheels are in /opt/wheelhouse (this machine has no internet access).
 PRICES = {"widget": "4.99", "gadget": "12.50", "gizmo": "0.99", "doohickey": "7.25"}
 
 
-def _package(root: str, files: dict[str, str], version: str) -> str:
+def _pricing_project(root: str, files: dict[str, str], version: str) -> str:
+    """A setup step that writes the source tree of ``pricing`` ``version`` under ``root``."""
     parts = [f"mkdir -p {root}/pricing"]
     for path, code in files.items():
         parts.append(f"cat > {root}/{path} <<'PY'\n{textwrap.dedent(code).strip()}\nPY")
@@ -88,7 +89,7 @@ def _package(root: str, files: dict[str, str], version: str) -> str:
         f'build-backend = "setuptools.build_meta"\n[project]\nname = "pricing"\n'
         f'version = "{version}"\n[tool.setuptools]\npackages = ["pricing"]\nTOML'
     )
-    return " && ".join(parts[:1]) + "\n" + "\n".join(parts[1:])
+    return "\n".join(parts)
 
 
 SHOP_APP = f"""
@@ -392,8 +393,8 @@ def tasks() -> list[Scenario]:
                 "the upgrade."
             ),
             setup=(
-                _package("/tmp/src/pricing-1.4", PRICING_14, "1.4.0"),
-                _package("/tmp/src/pricing-2.1", PRICING_21, "2.1.0"),
+                _pricing_project("/tmp/src/pricing-1.4", PRICING_14, "1.4.0"),
+                _pricing_project("/tmp/src/pricing-2.1", PRICING_21, "2.1.0"),
                 "mkdir -p /opt/wheelhouse && cd /tmp/src && for d in pricing-1.4 pricing-2.1; do "
                 "python3 -m pip wheel -q --no-index --no-build-isolation -w /opt/wheelhouse ./$d "
                 ">/dev/null; done && rm -rf /tmp/src",

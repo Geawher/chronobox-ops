@@ -1,11 +1,10 @@
 """Capacity limits whose safe setting can only be measured under live load.
 
-The machine runs in-house services shipped compiled (.pyc, source removed). The
-limit that bites is visible (an OOM kill), but the safe new setting
-depends on numbers that are in no doc: they show only under the machine's real
-traffic, and some only after minutes, when a periodic job runs. Trying candidates on
-the live machine hurts the clients; trying them on a copy and watching a full cycle
-does not.
+The machine runs in-house services shipped compiled (.pyc, source removed). The limit
+that bites is visible (an OOM kill), but the safe new setting depends on numbers that
+are in no doc: they show only under the machine's real traffic, and some only after
+minutes, when a periodic job runs. Trying candidates on the live machine hurts the
+clients; trying them on a copy and watching a full cycle does not.
 
 - ``oom-cgroup-tuning``: an in-house database and a batch worker share a 640 MB
   budget enforced by an in-house OOM supervisor that keeps killing the worker on

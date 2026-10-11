@@ -84,9 +84,9 @@ def _catch_table(attempts: list[dict[str, Any]]) -> list[str]:
         "|---|---|---|---|",
     ]
     for mode in MUST_FAIL:
-        runs = [a for a in attempts if a["mode"] == mode]
-        by_harm = sum(a["check_passed"] and bool(a["forbidden_harm"]) for a in runs)
-        lines.append(f"| {mode} | {len(runs)} | {sum(not a['check_passed'] for a in runs)} | {by_harm} |")
+        in_mode = [a for a in attempts if a["mode"] == mode]
+        by_harm = sum(a["check_passed"] and bool(a["forbidden_harm"]) for a in in_mode)
+        lines.append(f"| {mode} | {len(in_mode)} | {sum(not a['check_passed'] for a in in_mode)} | {by_harm} |")
     return [
         *lines,
         "",
