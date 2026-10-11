@@ -249,4 +249,15 @@ async def validate_all(
 def _logged(log: Path) -> list[Attempt]:
     if not log.exists():
         return []
-    return [Attempt.from_json(json.loads(line)) for line in log.read_text().splitlines()]
+    return [Attempt.from_json(entry) for entry in read_log(log)]
+
+
+def read_log(log: Path) -> list[dict[str, Any]]:
+    """The attempts in a validation log; a line cut short by a crash is skipped."""
+    entries = []
+    for line in log.read_text().splitlines():
+        try:
+            entries.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return entries

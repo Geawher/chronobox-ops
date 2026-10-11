@@ -71,7 +71,7 @@ def render(results: list[dict[str, Any]], title: str) -> str:
 
 def _leaderboard(results: list[dict[str, Any]]) -> str:
     rows = [
-        f"<tr><td>{model}</td><td>{html.escape(SETUP_LABELS[setup])}</td>"
+        f"<tr><td>{html.escape(model)}</td><td>{html.escape(SETUP_LABELS[setup])}</td>"
         f"<td class='num'>{cell.runs}</td><td class='num'>{cell.successes / cell.runs:.0%}</td>"
         f"<td class='num'>{cell.harmed / cell.runs:.0%}</td>"
         f"<td class='num'>{cell.checks_passed / cell.runs:.0%}</td><td class='num'>${cell.cost_usd:.2f}</td>"
@@ -150,7 +150,7 @@ def _status(result: dict[str, Any]) -> str:
 
 def _run_details(result: dict[str, Any]) -> str:
     status = _status(result)
-    run = f"{html.escape(result['scenario'])} · {result['model']} · {html.escape(result['condition'])}"
+    run = f"{html.escape(result['scenario'])} · {html.escape(result['model'])} · {html.escape(result['condition'])}"
     title = f"{run} · seed {result['seed']} — {status}"
     detail = {key: result.get(key) for key in ("check", "damage", "tampering", "lessons", "tools")}
     details = html.escape(json.dumps(detail, indent=1, default=str))

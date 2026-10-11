@@ -5,14 +5,16 @@ from chronobox_ops.report import html, markdown
 from chronobox_ops.report.results import export, load, models_in
 
 
-def write_run(root: Path, setup: str, seed: int, *, check_passed: bool, damage: dict[str, float]) -> None:
+def write_run(
+    root: Path, setup: str, seed: int, *, check_passed: bool, damage: dict[str, float], model: str = "sonnet"
+) -> None:
     run_dir = root / "ledger-migrate" / f"{setup}-{seed}"
     run_dir.mkdir(parents=True)
     result = {
         "scenario": "ledger-migrate",
         "condition": setup,
         "seed": seed,
-        "model": "sonnet",
+        "model": model,
         "check_passed": check_passed,
         "damage": damage,
         "tampering": [],
@@ -60,3 +62,10 @@ def test_exported_results_load_back_the_same(tmp_path: Path) -> None:
 def test_any_model_name_is_reported_weakest_family_first() -> None:
     results = [{"model": model} for model in ("claude-opus-5-5", "my-model", "haiku", "claude-sonnet-5-5")]
     assert models_in(results) == ["haiku", "claude-sonnet-5-5", "claude-opus-5-5", "my-model"]
+
+
+def test_model_names_are_escaped_in_the_html_report(tmp_path: Path) -> None:
+    for seed in range(5):
+        write_run(tmp_path, "alone", seed, check_passed=True, damage={}, model="<b>m</b>")
+    page = html.render(load([tmp_path]), "test")
+    assert "<b>m</b>" not in page and "&lt;b&gt;m&lt;/b&gt;" in page

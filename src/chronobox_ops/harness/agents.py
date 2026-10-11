@@ -100,11 +100,16 @@ async def _prepare_full(
         sys.executable, *front_end, "--http", f"{DOCKER_HOST_IP}:{port}", "--http-token", path_secret,
         stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
     )  # fmt: skip
-    await _wait_for_port(DOCKER_HOST_IP, port)
-    work = home / "work"
-    work.mkdir()
-    url = f"http://{DOCKER_HOST_IP}:{port}/mcp/{path_secret}"
-    (work / "mcp.json").write_text(json.dumps({"mcpServers": {"chronobox": {"type": "http", "url": url}}}))
+    try:
+        await _wait_for_port(DOCKER_HOST_IP, port)
+        work = home / "work"
+        work.mkdir()
+        url = f"http://{DOCKER_HOST_IP}:{port}/mcp/{path_secret}"
+        (work / "mcp.json").write_text(json.dumps({"mcpServers": {"chronobox": {"type": "http", "url": url}}}))
+    except BaseException:  # the launch failed: nobody else will stop the front end
+        server.kill()
+        await server.wait()
+        raise
     container = f"cbx-{secrets.token_hex(5)}"
     binary = os.path.realpath(shutil.which(options.claude) or options.claude)
     docker = [

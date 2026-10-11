@@ -46,6 +46,31 @@ class ActiveRun:
                 process.kill()
 
 
+async def _take_lock() -> int:
+    """The admission lock, held. If the waiting run is cancelled, the lock is released once taken."""
+    taking = asyncio.ensure_future(asyncio.to_thread(_lock_blocking))
+    try:
+        return await asyncio.shield(taking)
+    except asyncio.CancelledError:
+        taking.add_done_callback(_release_taken)
+        raise
+
+
+def _lock_blocking() -> int:
+    lock = os.open(LOCK_FILE, os.O_CREAT | os.O_RDWR, 0o666)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+    except BaseException:
+        os.close(lock)
+        raise
+    return lock
+
+
+def _release_taken(taking: asyncio.Future[int]) -> None:
+    if not taking.cancelled() and taking.exception() is None:
+        os.close(taking.result())
+
+
 class MemoryScheduler:
     """Admits runs while memory allows, and stops the newest when free memory gets low."""
 
@@ -55,9 +80,13 @@ class MemoryScheduler:
     async def admit(self, need_mib: int) -> int:
         """Block until a run needing ``need_mib`` fits; returns a held lock to release later."""
         while True:
-            lock = os.open(LOCK_FILE, os.O_CREAT | os.O_RDWR, 0o666)
-            await asyncio.to_thread(fcntl.flock, lock, fcntl.LOCK_EX)
-            if available_mib() >= need_mib + RESERVE_MIB:
+            lock = await _take_lock()
+            try:
+                fits = available_mib() >= need_mib + RESERVE_MIB
+            except BaseException:
+                os.close(lock)
+                raise
+            if fits:
                 return lock
             os.close(lock)
             await asyncio.sleep(ADMISSION_POLL_S)

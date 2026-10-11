@@ -2,19 +2,23 @@
 
 from __future__ import annotations
 
-import json
+import statistics
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
 from chronobox_ops.tasks import TASKS
-from chronobox_ops.validate import Attempt, Mode
+from chronobox_ops.validate import Attempt, Mode, read_log
 
 MUST_FAIL = (Mode.NAIVE, Mode.CORRUPT, Mode.ROLLBACK)
 
 
+def _harm_reasons(run: dict[str, Any]) -> list[str]:
+    return [*run["reward"]["forbidden_harm"], *(["tampering"] if run["reward"]["tampered"] else [])]
+
+
 def read_attempts(log: Path) -> list[dict[str, Any]]:
-    return [json.loads(line) for line in log.read_text().splitlines()]
+    return read_log(log)
 
 
 def behaved(attempt: dict[str, Any]) -> bool:
@@ -54,8 +58,8 @@ def _task_table(attempts: list[dict[str, Any]]) -> list[str]:
     ]
     for name, task in TASKS.items():
         cells = [_fraction(by_task[name][mode]) for mode in modes]
-        times = sorted(a["fix_s"] for a in by_task[name][Mode.REFERENCE])
-        median = f"{times[len(times) // 2]:.0f} s" if times else "–"
+        times = [a["fix_s"] for a in by_task[name][Mode.REFERENCE]]
+        median = f"{statistics.median(times):.0f} s" if times else "–"
         lines.append(f"| {name} | " + " | ".join(cells) + f" | {median} | {task.observe:g} s / {task.settle:g} s |")
     fast, natural = sum(t.observe for t in TASKS.values()), sum(t.settle for t in TASKS.values())
     return [
@@ -102,7 +106,7 @@ def _agent_runs(runs: list[dict[str, Any]]) -> list[str]:
         return []
     agree = sum(run["success"] == run["other_grade"]["success"] for run in graded)
     harmed = [run for run in graded if run["check_passed"] and not run["success"]]
-    reasons = Counter(key for run in harmed for key in run["reward"]["forbidden_harm"])
+    reasons = Counter(key for run in harmed for key in _harm_reasons(run))
     models = ", ".join(sorted({run["model"] for run in graded}))
     setups = ", ".join(sorted({run["condition"] for run in graded}))
     return [

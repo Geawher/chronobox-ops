@@ -84,7 +84,11 @@ class Run:
         self.home = Path(tempfile.mkdtemp(prefix=f"{self.task.name}-{self.setup.name}-{self.seed}-",
                                           dir=self.options.agent_dirs))  # fmt: skip
         # Unix socket paths are limited to ~108 bytes: the machine lives under a short temp dir.
-        self.scratch = Path(tempfile.mkdtemp(prefix="cbx-"))
+        try:
+            self.scratch = Path(tempfile.mkdtemp(prefix="cbx-"))
+        except OSError:
+            shutil.rmtree(self.home, ignore_errors=True)
+            raise
         self.machine_socket = self.scratch / "machine.sock"
         self.scheduler.active.append(self.active)
         result: dict[str, Any] = {"scenario": self.task.name, "condition": self.setup.name, "seed": self.seed,
