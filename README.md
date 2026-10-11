@@ -91,9 +91,9 @@ Each run is a fresh headless Claude Code; setups differ in what it is given:
 
 ## Results
 
-v0.2: five Claude models as full Claude Code, alone and with chronobox, 34 tasks × 3
+Five Claude models as full Claude Code, alone and with chronobox, 34 tasks × 3
 seeds each (1,081 runs in all; the three CTF tasks are reported apart, see below).
-Details, confidence intervals and every table: [`results/v0.2`](results/v0.2/README.md).
+Details, confidence intervals and every table: [`results`](results/README.md).
 
 | Model | Success alone → chronobox | Harmed users alone → chronobox | Cost / run (alone) |
 |---|---|---|---|
@@ -165,7 +165,7 @@ src/chronobox_ops/  scenario.py · tasks/ (37 tasks by theme) · scoring.py · v
                     report/ (results, Markdown tables, HTML report, validation report)
 agent/              sandbox image for full-access setups
 docs/AUTHORING.md   how to write a task
-results/v0.2/       benchmark results: tables, analysis, HTML report, every run's scores
+results/            benchmark results: tables, analysis, HTML report, every run's scores
 ```
 
 ## License

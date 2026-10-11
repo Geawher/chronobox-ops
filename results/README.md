@@ -1,4 +1,4 @@
-# chronobox-ops v0.2 results
+# chronobox-ops results
 
 Five Claude models, each run as a full Claude Code (its own tools, in a sandbox container)
 on every task, **alone** (`full-alone`: it reaches the machine through `run` / `wait`) and
@@ -18,7 +18,7 @@ Files: [`tables.md`](tables.md) (leaderboard, damage, per task, tool use; 34 tas
 [`analysis.md`](analysis.md) (chronobox effect with confidence intervals; CTF table),
 [`report.html`](report.html), [`tables-all-37-tasks.md`](tables-all-37-tasks.md), and
 [`results.json`](results.json) (every run's scores, without transcripts:
-`chronobox-ops report results/v0.2/results.json` rebuilds the tables).
+`chronobox-ops report results/results.json` rebuilds the tables).
 
 ## Leaderboard (34 tasks)
 
