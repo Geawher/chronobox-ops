@@ -25,6 +25,10 @@ probes measure the damage along the way.
 | Upgrades and releases | upgrade an in-house library whose new version silently changes units; resolve a pinned-dependency conflict for a security fix; a native-extension upgrade that mis-converts old files; a release cutover with a delayed failure; a rolling protocol upgrade across 3 replicas |
 | Live operations | free disk space without losing an open log; rotate a log the service keeps open; change nginx config under live traffic; reconfigure a daemon without dropping in-memory sessions; hotfix a leaking service before it is OOM-killed, keeping sessions; tune a queue whose documented settings crash it; tune a cache whose hidden settings evict pinned data; a rolling restart with an undocumented rejoin window; fail over a lagging replica; an exactly-once queue cutover |
 | Security | purge a leaked key from git history without losing work; rotate an API key across services; remove a respawning backdoor; three capture-the-flag tasks where wrong attempts are irreversible |
+| Found only by trying | split a memory budget whose real peak shows only at a periodic job; find which of 15 changed settings slowed a store, when undoing some of the others corrupts data; remove GC pauses when the documented low-pause collector fails minutes later; merge duplicate customers when the obvious rules merge different people; reclaim a bloated table's space without filling the WAL volume; finish a half-run billing batch without charging anyone twice; free space on a key-value store without bringing deleted keys back |
+
+[`src/chronobox_ops/tasks/README.md`](src/chronobox_ops/tasks/README.md) lists every task
+with its job and what makes it hard.
 
 Every task passes `chronobox-ops validate` repeatedly: left untouched it fails, its
 reference solution succeeds with zero harm, its obvious naive solution does not
@@ -85,6 +89,27 @@ Each run is a fresh headless Claude Code; setups differ in what it is given:
 | `full-alone` | all (sandbox container, internet) | MCP over HTTP | – |
 | `full-chronobox` | all | MCP over HTTP | forks, reports, lessons |
 
+## Results
+
+v0.2: five Claude models as full Claude Code, alone and with chronobox, 34 tasks × 3
+seeds each (1,081 runs in all; the three CTF tasks are reported apart, see below).
+Details, confidence intervals and every table: [`results/v0.2`](results/v0.2/README.md).
+
+| Model | Success alone → chronobox | Harmed users alone → chronobox | Cost / run (alone) |
+|---|---|---|---|
+| Opus 5.5 | 95% → 94% | 4% → 6% | $0.30 |
+| Opus 4.8 | 81% → 89% | 14% → 7% | $1.07 |
+| Sonnet 5 | 75% → 85% | 23% → 12% | $0.46 |
+| Sonnet 5.5 | 70% → 84% | 28% → 13% | $0.11 |
+| Haiku 4.5 | 29% → 39% | 55% → 43% | $0.15 |
+
+With chronobox, four of the five models succeed more often and harm users less often; the
+clearest case is Sonnet 5.5 (+15 points of success, −16 points of harm, both outside
+chance). Opus 5.5 gains nothing: it already succeeds on 95% of runs alone. On the CTF
+tasks, Opus 5.5 and Sonnet 5.5 stop with a safeguard refusal, so those tasks measure the
+models' safeguards rather than their care; the harness disables Claude Code's silent
+fallback to another model, so every run is the named model's own work.
+
 ## Running it
 
 Requirements: Linux with KVM (`/dev/kvm`), Docker, Python 3.12 with
@@ -140,6 +165,7 @@ src/chronobox_ops/  scenario.py · tasks/ (37 tasks by theme) · scoring.py · v
                     report/ (results, Markdown tables, HTML report, validation report)
 agent/              sandbox image for full-access setups
 docs/AUTHORING.md   how to write a task
+results/v0.2/       benchmark results: tables, analysis, HTML report, every run's scores
 ```
 
 ## License
