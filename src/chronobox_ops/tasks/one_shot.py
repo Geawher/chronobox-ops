@@ -537,16 +537,16 @@ PAY_PROBE = PAY_AUDIT + "print(json.dumps(out))\nPY"
 # charges: the reference also counts the debits waiting in the open bank file
 # (INCLUDE_PENDING), the naive fix does not. `--items` keeps billrun from touching the
 # progress file's idea of the batch.
-PAY_MISSING = """
+PAY_MISSING = f"""
 import csv, json, subprocess, urllib.request
 def get(path):
     return json.load(urllib.request.urlopen("http://127.0.0.1:7300" + path, timeout=30))
-seen = {c["reference"] for c in get("/v1/charges?prefix=inv-2026-10-")["charges"]}
+seen = {{c["reference"] for c in get("/v1/charges?prefix=inv-{BATCH}-")["charges"]}}
 INCLUDE_PENDING
-rows = list(csv.DictReader(open("/var/lib/billing/batches/2026-10.csv")))
-todo = [r["item"] for r in rows if f"inv-2026-10-{r['item']}" not in seen]
+rows = list(csv.DictReader(open("/var/lib/billing/batches/{BATCH}.csv")))
+todo = [r["item"] for r in rows if f"inv-{BATCH}-{{r['item']}}" not in seen]
 print(len(seen), "already charged;", len(todo), "to charge:", ",".join(todo))
-subprocess.run(["billrun", "run", "--batch", "2026-10", "--items", ",".join(todo)], check=True)
+subprocess.run(["billrun", "run", "--batch", "{BATCH}", "--items", ",".join(todo)], check=True)
 """
 
 
@@ -600,11 +600,11 @@ PAY_SETUP = (
     '.execute(\\"select id from customers where method=\'card\'\\")]" > /opt/shop/card-customers',
     python_service("/opt/shop/shop.py", SHOP_CLIENT),
     supervised("shop-frontend", "python3 /opt/shop/shop.py", "/var/log/shop.log"),
-    "sleep 3 && paydctl status && cat /var/lib/billing/2026-10.progress && tail -n 2 /var/log/billing/billrun-2026-10.log",
+    f"sleep 3 && paydctl status && cat /var/lib/billing/{BATCH}.progress && tail -n 2 /var/log/billing/billrun-{BATCH}.log",
 )
 
 PAY_PROMPT = (
-    "This morning's billing run for October (`billrun`, see `billrun --help`; batch 2026-10) was "
+    f"This morning's billing run for October (`billrun`, see `billrun --help`; batch {BATCH}) was "
     "killed partway through. Finish it: every item of the batch must end up charged exactly once - "
     "no customer charged twice for an item, none left uncharged. Charges go through our payment "
     "gateway payd (port 7300, docs /opt/payd/README) and are final: a charge sent cannot be undone. "
@@ -1230,7 +1230,7 @@ def tasks() -> list[Scenario]:
             secrets=("/opt/billing-audit/batch.py",),
             reference=(_pay_fix(include_pending=True),),
             naive=(_pay_fix(include_pending=False),),
-            corrupt="sqlite3 -cmd '.timeout 10000' /srv/payd/payd.db \"delete from charges where reference='inv-2026-10-1'\"",
+            corrupt=f"sqlite3 -cmd '.timeout 10000' /srv/payd/payd.db \"delete from charges where reference='inv-{BATCH}-1'\"",
         ),
         Scenario(
             name="kv-compaction-tombstones",

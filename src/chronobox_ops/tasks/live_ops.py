@@ -287,12 +287,8 @@ def tasks() -> list[Scenario]:
         ),
         Scenario(
             name="db-add-index",
-            reference=(
-                "psql -d shop -U shop -h /run/postgresql -c 'create index concurrently orders_email_idx on orders(customer_email)'",
-            ),
-            naive=(
-                "psql -d shop -U shop -h /run/postgresql -c 'create index orders_email_idx on orders(customer_email)'",
-            ),
+            reference=(f"{SHOP_PSQL} -c 'create index concurrently orders_email_idx on orders(customer_email)'",),
+            naive=(f"{SHOP_PSQL} -c 'create index orders_email_idx on orders(customer_email)'",),
             family="database migration",
             prompt=(
                 "The shop's PostgreSQL database `shop` (connect with `psql -d shop -U shop -h "
