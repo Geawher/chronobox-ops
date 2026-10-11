@@ -8,7 +8,7 @@ back). 3 seeds per task and setup (fewer on the CTF tasks, see below), 1,081 run
 
 | | |
 |---|---|
-| Benchmark | chronobox-ops `48512be` (37 tasks) |
+| Benchmark | chronobox-ops `48512be` (37 tasks); ctf-vault redone on `d3b23a5` (its check reformatted) |
 | chronobox | `tool-guidance` `a9e9e9f`, merged unchanged into `main` as `f43aac7` (tool descriptions: fork, try, then apply; a rollback loses users' writes) |
 | Claude Code | 2.1.287, model fallback disabled (see below) |
 | Models | `claude-opus-5-5`, `claude-opus-4-8`, `claude-sonnet-5-5`, `claude-sonnet-5`, `claude-haiku-4-5-20251001` |
@@ -112,6 +112,11 @@ failures would bias the results upward):
   not reach the API);
 - 6 Sonnet 5.5 CTF runs finished by the fallback model.
 
+The 18 ctf-vault runs of Opus 4.8, Sonnet 5 and Haiku 4.5 were also redone after its check
+became the shared CTF check (the same program, spaced differently); the scores came out the
+same (6/6, 6/6, 3/6). Sonnet 5.5's 2 ctf-vault runs were kept: they stopped at a safeguard
+before writing a flag, which both checks grade the same way.
+
 The runs that were set aside are kept outside this folder. No run in these results had a
-harness error. 5 Opus 4.8 runs stopped at the $3 budget and 24 runs (all models) at the
+harness error. 5 Opus 4.8 runs stopped at the $3 budget and 23 runs (all models) at the
 30-minute limit; both count as not done.
