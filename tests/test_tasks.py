@@ -8,8 +8,8 @@ from chronobox_ops.tasks import TASKS
 HEREDOC = re.compile(r"<<'(PYX?)'\n(.*?)\n\1(?:\n|$)", re.S)
 
 
-def test_there_are_thirty_seven_tasks_with_unique_names() -> None:
-    assert len(TASKS) == 37
+def test_there_are_forty_one_tasks_with_unique_names() -> None:
+    assert len(TASKS) == 41
 
 
 def test_embedded_python_compiles() -> None:

@@ -8,14 +8,18 @@ from chronobox_ops.tasks import (
     data_cleanup,
     databases,
     discovery,
+    downstream,
     hidden_config_hazards,
     hidden_upgrade_hazards,
     live_ops,
+    mixed_traffic,
     one_shot,
+    one_way,
     performance,
     releases,
     reliability,
     security,
+    shared_infra,
     upgrades,
 )
 
@@ -33,6 +37,10 @@ MODULES = (
     performance,
     data_cleanup,
     one_shot,
+    shared_infra,
+    mixed_traffic,
+    downstream,
+    one_way,
 )
 
 
