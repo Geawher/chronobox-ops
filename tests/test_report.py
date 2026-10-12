@@ -1,0 +1,71 @@
+import json
+from pathlib import Path
+
+from chronobox_ops.report import html, markdown
+from chronobox_ops.report.results import export, load, models_in
+
+
+def write_run(
+    root: Path, setup: str, seed: int, *, check_passed: bool, damage: dict[str, float], model: str = "sonnet"
+) -> None:
+    run_dir = root / "ledger-migrate" / f"{setup}-{seed}"
+    run_dir.mkdir(parents=True)
+    result = {
+        "scenario": "ledger-migrate",
+        "condition": setup,
+        "seed": seed,
+        "model": model,
+        "check_passed": check_passed,
+        "damage": damage,
+        "tampering": [],
+        "tools": {"run": 3},
+        "cost_usd": 0.1,
+        "agent_s": 60.0,
+    }
+    (run_dir / "result.json").write_text(json.dumps(result))
+
+
+def test_report_from_runs(tmp_path: Path) -> None:
+    for seed in range(5):  # the leaderboard omits setups with fewer than 5 runs
+        write_run(tmp_path, "alone", seed, check_passed=False, damage={"failed_requests": 20.0})
+        write_run(tmp_path, "chronobox", seed, check_passed=True, damage={})
+    results = load([tmp_path])
+    verdicts = {result["condition"]: (result["success"], result["reward"]["harmed"]) for result in results}
+    assert verdicts == {"alone": (False, True), "chronobox": (True, False)}
+    # a run whose check passed but whose clients saw errors is not a success
+    write_run(tmp_path, "rollback", 0, check_passed=True, damage={"failed_requests": 20.0})
+    rollback = next(r for r in load([tmp_path]) if r["condition"] == "rollback")
+    assert rollback["check_passed"] and not rollback["success"]
+    assert "end state right" in html.render(load([tmp_path]), "test")
+    board = markdown.leaderboard(results)
+    assert "| sonnet | MCP only · alone | 5 | 0% | 100% | 0% |" in board
+    assert "| sonnet | MCP only · chronobox | 5 | 100% | 0% | 100% |" in board
+    assert "| sonnet · alone | 5 | 5 (100%), 100 in total | 0 |" in markdown.damage(results)
+    assert "| ledger-migrate | 0/5 (harm harm harm harm harm) | 5/5 (✓ ✓ ✓ ✓ ✓) |" in markdown.per_task(results)
+    page = html.render(results, "test")
+    assert page.startswith("<!doctype html>") and "ledger-migrate" in page
+
+
+def test_exported_results_load_back_the_same(tmp_path: Path) -> None:
+    for seed in range(2):
+        write_run(tmp_path / "runs", "alone", seed, check_passed=True, damage={"failed_requests": float(seed)})
+    results = load([tmp_path / "runs"])
+    exported = tmp_path / "results.json"
+    exported.write_text(export(results))
+    again = load([exported])
+    assert "(no trace)" in html.render(again, "test")  # exported results have no run directory
+    assert [(r["seed"], r["success"], r["reward"]) for r in again] == [
+        (r["seed"], r["success"], r["reward"]) for r in results
+    ]
+
+
+def test_any_model_name_is_reported_weakest_family_first() -> None:
+    results = [{"model": model} for model in ("claude-opus-5-5", "my-model", "haiku", "claude-sonnet-5-5")]
+    assert models_in(results) == ["haiku", "claude-sonnet-5-5", "claude-opus-5-5", "my-model"]
+
+
+def test_model_names_are_escaped_in_the_html_report(tmp_path: Path) -> None:
+    for seed in range(5):
+        write_run(tmp_path, "alone", seed, check_passed=True, damage={}, model="<b>m</b>")
+    page = html.render(load([tmp_path]), "test")
+    assert "<b>m</b>" not in page and "&lt;b&gt;m&lt;/b&gt;" in page

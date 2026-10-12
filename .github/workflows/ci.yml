@@ -1,0 +1,24 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # chronobox is installed from GitHub (pyproject.toml). While it is private, CI needs a
+      # read-only token for it in the repository secret CHRONOBOX_TOKEN.
+      CHRONOBOX_TOKEN: ${{ secrets.CHRONOBOX_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Access to chronobox
+        if: env.CHRONOBOX_TOKEN != ''
+        run: |
+          git config --global url."https://x-access-token:${CHRONOBOX_TOKEN}@github.com/Geawher/".insteadOf "https://github.com/Geawher/"
+          git ls-remote https://github.com/Geawher/chronobox.git HEAD > /dev/null \
+            || { echo "::error::CHRONOBOX_TOKEN cannot read Geawher/chronobox (needs Contents: read-only on that repository)"; exit 1; }
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run ruff check src tests && uv run ruff format --check src tests
+      # Real-VM tests need /dev/kvm and the chronobox image; they are skipped here.
+      - run: uv run pytest -q

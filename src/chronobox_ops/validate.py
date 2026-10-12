@@ -1,0 +1,263 @@
+"""Check the tasks themselves, through the same code the benchmark grades agents with.
+
+Each attempt boots the task, runs scripted commands on the main machine and grades the
+result like an agent's run (probes, secrets, fast-forward or natural wait, hidden check,
+strict success). A valid task behaves like this in every mode:
+
+- ``untouched``: nothing done; must not succeed;
+- ``reference``: the correct solution; must succeed with zero harm of any kind;
+- ``naive``: the obvious-but-wrong solution; must not succeed;
+- ``corrupt``: the reference, then one piece of user data harmed; must not succeed
+  (proves the checker sees data loss);
+- ``rollback``: the reference, then the main machine rolled back while clients keep
+  writing; must not succeed (proves writes thrown away are seen). Only for tasks with
+  acknowledged client writes.
+
+Repeating attempts (``repeat``) catches tasks whose outcome depends on timing.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import shutil
+import tempfile
+import time
+from dataclasses import asdict, dataclass, field
+from enum import StrEnum
+from pathlib import Path
+from typing import Any
+
+from chronobox import Profile, Workspace
+
+from chronobox_ops.harness.machine import (
+    CHECK_TIMEOUT_S,
+    GradeMode,
+    ScenarioMachine,
+    last_json_line,
+    scenario_workspace,
+)
+from chronobox_ops.harness.scheduler import MemoryScheduler
+from chronobox_ops.scenario import Scenario
+from chronobox_ops.scoring import counted_damage, report_reward
+from chronobox_ops.tasks import TASKS
+
+STEP_TIMEOUT_S = 900.0
+EXIT_OK = "[exit code 0]"
+ROLLBACK_LABEL = "after-fix"
+ROLLBACK_WRITES_S = 15.0
+BOOT_EXTRA_MIB = 600
+KEPT_OUTPUT_CHARS = 300
+
+
+class Mode(StrEnum):
+    UNTOUCHED = "untouched"
+    REFERENCE = "reference"
+    NAIVE = "naive"
+    CORRUPT = "corrupt"
+    ROLLBACK = "rollback"
+
+
+MUST_SUCCEED = frozenset({Mode.REFERENCE})
+
+
+@dataclass
+class Attempt:
+    task: str
+    mode: Mode
+    round: int
+    grade: str = GradeMode.FAST_FORWARD.value
+    success: bool = False
+    check_passed: bool = False
+    solved_at_start: bool = False
+    forbidden_harm: list[str] = field(default_factory=list)
+    harm: float = 0.0
+    damage: dict[str, float] = field(default_factory=dict)
+    tampering: list[str] = field(default_factory=list)
+    failed_steps: list[str] = field(default_factory=list)
+    check: dict[str, Any] = field(default_factory=dict)
+    probe_readings: int = 0
+    fast_forward: dict[str, Any] | None = None
+    other_grade: dict[str, Any] | None = None
+    fix_s: float = 0.0
+    total_s: float = 0.0
+    error: str | None = None
+
+    @classmethod
+    def from_json(cls, fields: dict[str, Any]) -> Attempt:
+        """An attempt as ``validate --log`` wrote it."""
+        return cls(**{**fields, "mode": Mode(fields["mode"])})
+
+    def problems(self) -> list[str]:
+        """What is wrong with the task according to this attempt; empty if nothing."""
+        if self.error:
+            return [f"{self.mode}: error: {self.error}"]
+        found = []
+        if self.probe_readings == 0:
+            found.append(f"{self.mode}: the probe never produced a reading (damage would go unseen)")
+        if self.mode in MUST_SUCCEED:
+            if self.solved_at_start:
+                found.append("the check passes before any fix")
+            if not self.success:
+                found.append(f"reference does not succeed: check={self.check}, forbidden={self.forbidden_harm}")
+            if self.harm > 0:
+                found.append(f"reference causes harm: {self.damage}")
+        elif self.success:
+            found.append(f"{self.mode} succeeds: {self.check}")
+        if self.other_grade is not None and self.other_grade["success"] != self.success:
+            found.append(f"{self.mode}: graders disagree ({self.grade}={self.success}, other={self.other_grade})")
+        return found
+
+
+def modes_for(task: Scenario, requested: list[Mode]) -> list[Mode]:
+    applicable = {
+        Mode.UNTOUCHED: True,
+        Mode.REFERENCE: bool(task.reference),
+        Mode.NAIVE: bool(task.naive),
+        Mode.CORRUPT: bool(task.corrupt),
+        Mode.ROLLBACK: task.acked is not None,
+    }
+    return [mode for mode in requested if applicable[mode]]
+
+
+async def attempt(
+    task: Scenario, mode: Mode, round_: int, *, root: Path, grade: GradeMode, scheduler: MemoryScheduler
+) -> Attempt:
+    """Boot the task, apply ``mode`` on the main machine, grade like an agent's run."""
+    result = Attempt(task.name, mode, round_, grade=grade.value)
+    profile = Profile.ROLLBACK if mode is Mode.ROLLBACK else Profile.ALONE
+    workspace = scenario_workspace(task, profile, root=root)
+    machine = ScenarioMachine(task, workspace)
+    started = time.monotonic()
+    probing = None
+    lock: int | None = await scheduler.admit(task.mem_mib * (3 if grade is GradeMode.BOTH else 1) + BOOT_EXTRA_MIB)
+    try:
+        await machine.boot()
+        scheduler.release(lock)
+        lock = None
+        if machine.service.error or workspace.main is None:
+            result.error = machine.service.error or "no main machine"
+            return result
+        _, before = await machine.hidden_run(workspace.main, task.check, CHECK_TIMEOUT_S)
+        result.solved_at_start = bool((last_json_line(before) or {}).get("success"))
+        # Baseline before the first command, then keep measuring while commands run.
+        await machine.probe_once()
+        probing = asyncio.create_task(machine.probe_loop())
+        fixing = time.monotonic()
+        result.failed_steps = await _apply(task, mode, workspace)
+        result.fix_s = round(time.monotonic() - fixing, 1)
+        report = await machine.finish(grade)
+        _graded(result, task, report)
+    finally:
+        if probing is not None:
+            probing.cancel()
+        scheduler.release(lock)
+        await workspace.close()
+        await workspace.backend.cleanup()
+        result.total_s = round(time.monotonic() - started, 1)
+    return result
+
+
+async def _apply(task: Scenario, mode: Mode, workspace: Workspace) -> list[str]:
+    commands = {
+        Mode.UNTOUCHED: (),
+        Mode.REFERENCE: task.reference,
+        Mode.NAIVE: task.naive,
+        Mode.CORRUPT: (*task.reference, task.corrupt),
+        Mode.ROLLBACK: task.reference,
+    }[mode]
+    failed = []
+    for command in commands:
+        output = await workspace.run(command, timeout=STEP_TIMEOUT_S)
+        if not output.rstrip().endswith(EXIT_OK):
+            failed.append(output[-KEPT_OUTPUT_CHARS:])
+    if mode is Mode.ROLLBACK:
+        await workspace.checkpoint(ROLLBACK_LABEL)
+        await asyncio.sleep(ROLLBACK_WRITES_S)
+        await workspace.rollback(ROLLBACK_LABEL)
+    return failed
+
+
+def _graded(result: Attempt, task: Scenario, report: dict[str, Any]) -> None:
+    if "check" not in report:
+        result.error = report.get("error", "no report")
+        return
+    reward = report_reward(task, report)
+    result.success, result.check_passed = reward["success"], reward["check_passed"]
+    result.forbidden_harm = reward["forbidden_harm"]
+    result.harm = sum(counted_damage(task, report["damage"]).values())
+    result.damage, result.tampering, result.check = report["damage"], report["tampering"], report["check"]
+    result.probe_readings, result.fast_forward = report["probe_readings"], report["fast_forward"]
+    other = report.get("other_grade")
+    if other is not None:
+        other_reward = report_reward(task, other)
+        result.other_grade = {"grade": other["grade"], "success": other_reward["success"], "check": other["check"],
+                              "forbidden_harm": other_reward["forbidden_harm"], "damage": other["damage"],
+                              "fast_forward": other["fast_forward"]}  # fmt: skip
+
+
+async def validate_all(
+    names: list[str],
+    *,
+    jobs: int,
+    modes: list[Mode],
+    repeat: int = 1,
+    grade: GradeMode = GradeMode.FAST_FORWARD,
+    log: Path | None = None,
+    resume: bool = False,
+) -> dict[str, list[str]]:
+    """Attempt every (task, mode, round); returns each task's problems (empty: valid).
+
+    With ``resume``, attempts already in ``log`` count as done and are not repeated.
+    """
+    limit = asyncio.Semaphore(jobs)
+    scheduler = MemoryScheduler()
+    root = Path(tempfile.mkdtemp(prefix="cbx-validate-"))
+    earlier = _logged(log) if resume and log is not None else []
+    finished = {(attempt.task, attempt.mode, attempt.round) for attempt in earlier}
+    units = [
+        (name, mode, round_)
+        for round_ in range(repeat)
+        for name in names
+        for mode in modes_for(TASKS[name], modes)
+        if (name, mode, round_) not in finished
+    ]
+
+    async def one(name: str, mode: Mode, round_: int) -> Attempt:
+        async with limit:
+            done = await attempt(
+                TASKS[name], mode, round_, root=root / f"{name}-{mode}-{round_}", grade=grade, scheduler=scheduler
+            )
+        problems = done.problems()
+        print(f"{'FAIL' if problems else 'ok  '} {name:34} {mode:9} #{round_} {done.total_s:6.0f}s "
+              f"{'; '.join(problems)}", flush=True)  # fmt: skip
+        if log is not None:
+            with log.open("a") as out:
+                out.write(json.dumps(asdict(done), default=str) + "\n")
+        return done
+
+    try:
+        attempts = [*earlier, *await asyncio.gather(*(one(*unit) for unit in units))]
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+    return {
+        name: [problem for attempt in attempts if attempt.task == name for problem in attempt.problems()]
+        for name in names
+    }
+
+
+def _logged(log: Path) -> list[Attempt]:
+    if not log.exists():
+        return []
+    return [Attempt.from_json(entry) for entry in read_log(log)]
+
+
+def read_log(log: Path) -> list[dict[str, Any]]:
+    """The attempts in a validation log; a line cut short by a crash is skipped."""
+    entries = []
+    for line in log.read_text().splitlines():
+        try:
+            entries.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return entries
