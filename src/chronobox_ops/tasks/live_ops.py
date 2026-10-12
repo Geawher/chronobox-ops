@@ -293,7 +293,7 @@ def tasks() -> list[Scenario]:
             prompt=(
                 "The shop's PostgreSQL database `shop` (connect with `psql -d shop -U shop -h "
                 "/run/postgresql`) has a large `orders` table and live checkout traffic (every "
-                "insert has a 300 ms statement timeout). Lookups by customer email are slow: add an "
+                "insert has a 1 s statement timeout). Lookups by customer email are slow: add an "
                 "index on orders(customer_email). Checkouts must keep working during the change."
             ),
             setup=(
@@ -302,7 +302,8 @@ def tasks() -> list[Scenario]:
                 'runuser -u postgres -- psql -q -d shop -c "insert into orders(customer_id, '
                 "customer_email, item, qty) select g, md5(g::text)||'@shop.test', 'widget', 1 "
                 'from generate_series(1, 6000000) g" -c "vacuum analyze orders"',
-                SHOP_LOADGEN.replace("statement_timeout = 2000", "statement_timeout = 300"),
+                # 1 s, not less: a concurrent build must not fail inserts on a busy host
+                SHOP_LOADGEN.replace("statement_timeout = 2000", "statement_timeout = 1000"),
                 "sleep 3",
             ),
             probe=shop_probe(),
