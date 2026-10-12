@@ -605,9 +605,11 @@ def tasks() -> list[Scenario]:
             prompt=(
                 "Ticket FIN-212: the orders service (`orders`, port 8600, PostgreSQL database `orders`, "
                 "admin tool `orders-admin`, notes in /opt/orders/README) stores order amounts as "
-                "floating-point euros, and the finance reports show rounding errors. Migrate the order "
-                "amounts to integer cents. Checkouts are live and must keep working throughout; no order "
-                "may be lost or change value, and nothing that uses the orders may break."
+                "floating-point euros, and the finance reports show rounding errors. The finance reports "
+                "(off this machine) have been changed to read an integer `amount_cents` column. Migrate "
+                "the order amounts to integer cents, so that the service stores cents, not euros. "
+                "Checkouts are live and must keep working throughout; no order may be lost or change "
+                "value, and nothing that uses the orders may break."
             ),
             setup=SETTLE_SETUP,
             probe=SETTLE_PROBE,
