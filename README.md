@@ -17,7 +17,7 @@ probes measure the damage along the way.
 
 ## Tasks
 
-37 offline tasks of varying difficulty; `chronobox-ops list` shows them all.
+41 offline tasks of varying difficulty; `chronobox-ops list` shows them all.
 
 | Theme | Tasks |
 |---|---|
@@ -26,6 +26,7 @@ probes measure the damage along the way.
 | Live operations | free disk space without losing an open log; rotate a log the service keeps open; change nginx config under live traffic; reconfigure a daemon without dropping in-memory sessions; hotfix a leaking service before it is OOM-killed, keeping sessions; tune a queue whose documented settings crash it; tune a cache whose hidden settings evict pinned data; a rolling restart with an undocumented rejoin window; fail over a lagging replica; an exactly-once queue cutover |
 | Security | purge a leaked key from git history without losing work; rotate an API key across services; remove a respawning backdoor; three capture-the-flag tasks where wrong attempts are irreversible |
 | Found only by trying | split a memory budget whose real peak shows only at a periodic job; find which of 15 changed settings slowed a store, when undoing some of the others corrupts data; remove GC pauses when the documented low-pause collector fails minutes later; merge duplicate customers when the obvious rules merge different people; reclaim a bloated table's space without filling the WAL volume; finish a half-run billing batch without charging anyone twice; free space on a key-value store without bringing deleted keys back |
+| Several services | reindex a catalog behind a mesh router where a second instance registers itself and takes real traffic; release an API version that drops a route one rare client still calls; migrate amounts to cents when a nightly settlement export reads the old column; run an event store's one-way format upgrade on a nearly full disk, when its oldest files hold local time |
 
 [`src/chronobox_ops/tasks/README.md`](src/chronobox_ops/tasks/README.md) lists every task
 with its job and what makes it hard.
@@ -91,24 +92,26 @@ Each run is a fresh headless Claude Code; setups differ in what it is given:
 
 ## Results
 
-Five Claude models as full Claude Code, alone and with chronobox, 34 tasks × 3
-seeds each (1,081 runs in all; the three CTF tasks are reported apart, see below).
+Five Claude models as full Claude Code, alone and with chronobox, 38 tasks × 3
+seeds each (1,201 runs in all; the three CTF tasks are reported apart, see below).
 Details, confidence intervals and every table: [`results/`](results/README.md).
 
 | Model | Success alone → chronobox | Harmed users alone → chronobox | Cost / run (alone) |
 |---|---|---|---|
-| Opus 5.5 | 95% → 94% | 4% → 6% | $0.30 |
-| Opus 4.8 | 81% → 89% | 14% → 7% | $1.07 |
-| Sonnet 5 | 75% → 85% | 23% → 12% | $0.46 |
-| Sonnet 5.5 | 70% → 84% | 28% → 13% | $0.11 |
-| Haiku 4.5 | 29% → 39% | 55% → 43% | $0.15 |
+| Opus 5.5 | 96% → 96% | 3% → 4% | $0.30 |
+| Opus 4.8 | 84% → 90% | 11% → 6% | $1.07 |
+| Sonnet 5 | 75% → 86% | 23% → 11% | $0.45 |
+| Sonnet 5.5 | 75% → 85% | 24% → 12% | $0.11 |
+| Haiku 4.5 | 32% → 38% | 54% → 45% | $0.14 |
 
-With chronobox, four of the five models succeed more often and harm users less often; the
-clearest case is Sonnet 5.5 (+15 points of success, −16 points of harm, both outside
-chance). Opus 5.5 gains nothing: it already succeeds on 95% of runs alone. On the CTF
-tasks, Opus 5.5 and Sonnet 5.5 stop with a safeguard refusal, so those tasks measure the
-models' safeguards rather than their care; the harness disables Claude Code's silent
-fallback to another model, so every run is the named model's own work.
+With chronobox, four of the five models succeed more often and harm users less often
+(about half as often for Opus 4.8 and both Sonnets; Sonnet 5: +11 points of success, −11 points of harm, both outside chance; Sonnet 5.5
+the same size, just inside it). Opus 5.5 gains nothing: it already succeeds on 96% of runs
+alone. The four tasks added since v0.1, built so that rehearsing on a copy of the live
+machine pays, turned out easy for every model but Haiku 4.5. On the CTF tasks, Opus 5.5
+and Sonnet 5.5 stop with a safeguard refusal, so those tasks measure the models'
+safeguards rather than their care; the harness disables Claude Code's silent fallback to
+another model, so every run is the named model's own work.
 
 ## Running it
 
@@ -160,7 +163,7 @@ benchmark's authors are the most valuable contribution.
 ## Layout
 
 ```
-src/chronobox_ops/  scenario.py · tasks/ (37 tasks by theme) · scoring.py · validate.py · cli.py
+src/chronobox_ops/  scenario.py · tasks/ (41 tasks by theme) · scoring.py · validate.py · cli.py
                     harness/ (machine: probes, secrets, damage · setups · agents · scheduler · runner)
                     report/ (results, Markdown tables, HTML report, validation report)
 agent/              sandbox image for full-access setups

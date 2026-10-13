@@ -1,12 +1,24 @@
-## chronobox effect per model (34 tasks without the CTF ones, 3 seeds)
+## chronobox effect per model, all tasks without the CTF ones (38 tasks, 3 seeds)
 
 | Model | Success alone | Success chronobox | Difference (95% CI) | Harmed alone | Harmed chronobox | Difference (95% CI) | Tasks better / worse |
 |---|---|---|---|---|---|---|---|
-| Opus 5.5 | 95% | 94% | -1% [-9%, +7%] | 4% | 6% | +2% [-6%, +10%] | 4 / 4 |
-| Opus 4.8 | 81% | 89% | +8% [-2%, +19%] | 14% | 7% | -7% [-17%, +2%] | 8 / 3 |
-| Sonnet 5.5 | 70% | 84% | +15% [+4%, +26%] * | 28% | 13% | -16% [-29%, -4%] * | 9 / 1 |
-| Sonnet 5 | 75% | 85% | +10% [-1%, +22%] | 23% | 12% | -11% [-22%, -1%] * | 8 / 2 |
-| Haiku 4.5 | 29% | 39% | +10% [+0%, +21%] | 55% | 43% | -12% [-24%, -1%] * | 11 / 4 |
+| Opus 5.5 | 96% | 96% | +0% [-6%, +6%] | 3% | 4% | +1% [-4%, +6%] | 3 / 3 |
+| Opus 4.8 | 84% | 90% | +6% [-2%, +15%] | 11% | 6% | -5% [-13%, +1%] | 7 / 2 |
+| Sonnet 5.5 | 75% | 85% | +11% [-1%, +23%] | 24% | 12% | -11% [-25%, +1%] | 9 / 2 |
+| Sonnet 5 | 75% | 86% | +11% [+1%, +20%] * | 23% | 11% | -11% [-21%, -3%] * | 9 / 1 |
+| Haiku 4.5 | 32% | 38% | +6% [-4%, +17%] | 54% | 45% | -9% [-19%, +2%] | 10 / 6 |
+
+\* the 95% interval excludes 0.
+
+## chronobox effect on the four rehearsal tasks (4 tasks, 3 seeds)
+
+| Model | Success alone | Success chronobox | Difference (95% CI) | Harmed alone | Harmed chronobox | Difference (95% CI) | Tasks better / worse |
+|---|---|---|---|---|---|---|---|
+| Opus 5.5 | 100% | 100% | +0% [+0%, +0%] | 0% | 0% | +0% [+0%, +0%] | 0 / 0 |
+| Opus 4.8 | 100% | 100% | +0% [+0%, +0%] | 0% | 0% | +0% [+0%, +0%] | 0 / 0 |
+| Sonnet 5.5 | 100% | 100% | +0% [+0%, +0%] | 0% | 0% | +0% [+0%, +0%] | 0 / 0 |
+| Sonnet 5 | 83% | 92% | +8% [-8%, +33%] | 17% | 8% | -8% [-33%, +8%] | 1 / 0 |
+| Haiku 4.5 | 50% | 42% | -8% [-33%, +0%] | 42% | 58% | +17% [+0%, +42%] | 0 / 1 |
 
 \* the 95% interval excludes 0.
 
