@@ -22,6 +22,9 @@ Files: [`tables.md`](tables.md) (leaderboard, damage, per task, tool use; 34 tas
 [`results.json`](results.json) (every run's scores, without transcripts:
 `chronobox-ops report results/results.json --markdown FILE` rebuilds
 `tables-all-37-tasks.md`, and `tables.md` from the same runs without the CTF tasks).
+Six-seed follow-up: [`six-seeds.md`](six-seeds.md), rebuilt by
+[`six_seeds.py`](six_seeds.py) from `results.json` and
+[`results-seeds.json`](results-seeds.json) (the 306 runs of seeds 3–5).
 
 ## Leaderboard (34 tasks)
 
@@ -59,7 +62,8 @@ exclude 0.
 - **Four of five models do better with chronobox**, by 7 to 12 points of success, and harm
   users less often (roughly half as often for Sonnet 5.5, Sonnet 5 and Opus 4.8). The
   effect is clearest for Sonnet 5 (both differences outside chance) and Sonnet 5.5 (the
-  same size, just inside chance since the redone pg-int-to-bigint runs). For the strongest
+  same size, just inside chance over 3 seeds; outside chance over 6, see
+  [below](#six-seeds-a-cheaper-model-with-chronobox-vs-a-stronger-one-alone)). For the strongest
   model, Opus 5.5, it makes no difference: it already succeeds on 96% of runs alone, often by building its own test
   copy (a second instance on copied data) where weaker models need a fork.
 - **The gain comes from trying before applying.** With chronobox, every model ran about
@@ -76,6 +80,47 @@ exclude 0.
   does not reveal), and a few single-seed losses elsewhere.
 - **Rollbacks**: only Haiku 4.5 rolled back (29 times), throwing away 1,156 acknowledged
   user writes in 3 runs; no other model rolled back once, as the tool descriptions advise.
+
+## Six seeds: a cheaper model with chronobox vs a stronger one alone
+
+The table above suggests that a cheaper model with chronobox does about as well as a
+stronger model alone. To test that with more confidence, three setups were run 3 more times
+on the 34 tasks (seeds 3–5, 306 runs, 2026-10-13): Opus 4.8 alone, Sonnet 5.5 with
+chronobox, and Sonnet 5.5 alone, the last so that the chronobox effect compares runs from
+the same day. The leaderboard above stays at seeds 0–2 for every model.
+All tables: [`six-seeds.md`](six-seeds.md).
+
+| Comparison (6 seeds unless noted) | Success (95% CI of the difference) | Harmed users (95% CI) | Cost / run |
+|---|---|---|---|
+| Opus 4.8 alone → Sonnet 5.5 chronobox | 82% → 86%, +4% [−3%, +13%] | 13% → 12%, −1% [−7%, +5%] | $1.09 → $0.13 |
+| Sonnet 5.5 alone → Sonnet 5.5 chronobox | 72% → 86%, **+14% [+4%, +26%]** | 26% → 12%, **−14% [−26%, −3%]** | $0.11 → $0.13 |
+| Opus 5.5 alone (3 seeds) → Sonnet 5.5 chronobox | 96% → 86%, −10% [−20%, 0%] | 3% → 12%, +9% [0%, +19%] | $0.30 → $0.13 |
+
+- **Sonnet 5.5 with chronobox does as well as Opus 4.8 alone, at about an eighth of the
+  cost.** Neither difference is outside chance, and the intervals bound how much worse it
+  could be: about 3 points of success and 5 points of harmed runs. With 3 seeds those
+  bounds were 11 and 12 points.
+- **chronobox's effect on Sonnet 5.5 is now outside chance**: +14 points of success, and
+  harmed runs halved. On the new seeds alone (both setups run the same day) it is
+  +17% [+6%, +29%].
+- **It does not reach the strongest model**: Opus 5.5 alone succeeds more often and harms
+  users less; both intervals end at 0, so the gap is borderline at this sample size.
+- **The new seeds agree with the old ones**: no setup changed outside chance between seeds
+  0–2 and 3–5 (Sonnet 5.5 chronobox did a little better, +6% [−4%, +17%]).
+- **Where the gain comes from**: on the five tasks with the largest gains (jobq-tuning,
+  cache-tiering-eviction, vacuum-full-bloat, oom-cgroup-tuning, kv-compaction-tombstones;
+  0–2 of 6 alone, 4–6 of 6 with chronobox), every failure of Sonnet 5.5 alone harmed users
+  (lost jobs, evicted pinned entries, the database killed out of memory, deleted keys back,
+  failed requests), and with chronobox it forked before changing the live machine in all 30
+  runs. The clear loss is pg-int-to-bigint (6/6 → 3/6), as in the first seeds.
+- Six seeds narrowed the success interval from 24 to 16 points, less than doubling the runs
+  alone would suggest: most of the uncertainty comes from which tasks are in the benchmark,
+  so more tasks would tighten it more than more seeds.
+
+Run as before (benchmark `5ac1fce`, chronobox `f43aac7`, Claude Code 2.1.287, same
+governor). 34 runs that ended at once on the Claude usage limit were set aside and redone;
+no run overlapped a memory stall. 3 runs stopped at the 30-minute limit and 2 at the $3
+budget; both count as not done. Cost: $136 at API prices, 23 agent-hours.
 
 ## CTF tasks and model safeguards
 

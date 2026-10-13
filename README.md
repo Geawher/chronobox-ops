@@ -105,8 +105,16 @@ Details, confidence intervals and every table: [`results/`](results/README.md).
 
 With chronobox, four of the five models succeed more often and harm users less often; the
 clearest cases are Sonnet 5 (+11 points of success, −12 points of harm, both outside
-chance) and Sonnet 5.5 (+12 and −13, just inside chance). Opus 5.5 gains nothing: it
-already succeeds on 96% of runs alone. On the CTF
+chance) and Sonnet 5.5 (+12 and −13, just inside chance over 3 seeds; +14 and −14, outside
+chance, over 6). Opus 5.5 gains nothing: it already succeeds on 96% of runs alone.
+
+**A cheaper model with chronobox matches a stronger one alone.** Over 6 seeds, Sonnet 5.5
+with chronobox succeeds on 86% of runs and harms users on 12%, against 82% and 13% for
+Opus 4.8 alone, at $0.13 per run instead of $1.09 (differences +4% [−3%, +13%] and
+−1% [−7%, +5%], 95% CI). It does not reach Opus 5.5 alone (96% and 3%).
+[Six-seed follow-up](results/README.md#six-seeds-a-cheaper-model-with-chronobox-vs-a-stronger-one-alone).
+
+On the CTF
 tasks, Opus 5.5 and Sonnet 5.5 stop with a safeguard refusal, so those tasks measure the
 models' safeguards rather than their care; the harness disables Claude Code's silent
 fallback to another model, so every run is the named model's own work.
