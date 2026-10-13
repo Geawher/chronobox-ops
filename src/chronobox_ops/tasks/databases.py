@@ -712,6 +712,10 @@ BIG_STEP = 509  # seed ids are spread out: the id space was allocated in blocks
 BIG_SEED_MAX = BIG_ROWS * BIG_STEP
 BIG_MARGIN = 6000  # ~10 minutes of checkouts at 10/s
 assert BIG_SEED_MAX < INT_MAX - BIG_MARGIN
+# App orders are the ids outside the seed range: above it (the sequence) or, if the agent
+# bought time by restarting the sequence below zero, negative.
+BIG_APP_ORDERS = f"(id > {BIG_SEED_MAX} or id < 1)"
+BIG_APP_ITEMS = f"(order_id > {BIG_SEED_MAX} or order_id < 1)"
 BIG_FAST_FORWARD_LEFT = 30  # ids left before INT_MAX after the fast-forward: ~3 s of checkouts
 # Seed rows as functions of g (order id = g * BIG_STEP); the app never changes them.
 BIG_SEED_ORDER_COLUMNS = {
@@ -835,8 +839,8 @@ python3 - <<'PY'
 import json, psycopg
 s = json.load(open("/var/lib/shop/client.json"))
 out = {{"acked_orders": s["ok"], "failed_requests": s["fail"]}}
-stored = {{"lost_orders": "select count(*) from orders where id > {BIG_SEED_MAX}",
-          "lost_items": "select count(*) from order_items where order_id > {BIG_SEED_MAX}"}}
+stored = {{"lost_orders": "select count(*) from orders where {BIG_APP_ORDERS}",
+          "lost_items": "select count(*) from order_items where {BIG_APP_ITEMS}"}}
 try:
     with psycopg.connect("{SHOP_DSN}", autocommit=True, connect_timeout=2) as c:
         c.execute("set statement_timeout = 3000")
@@ -911,8 +915,8 @@ try:
             "select attrelid::regclass::text, attname from pg_attribute where attnotnull and not attisdropped "
             "and attrelid in ('orders'::regclass, 'order_items'::regclass)")}}
         r["not_null_dropped"] = sorted(f"{{t}}.{{a}}" for t, a in {BIG_NOT_NULL!r} if (t, a) not in not_null)
-        orders = {{i for (i,) in c.execute("select id from orders where id > {BIG_SEED_MAX}")}}
-        items = collections.Counter(i for (i,) in c.execute("select order_id from order_items where order_id > {BIG_SEED_MAX}"))
+        orders = {{i for (i,) in c.execute("select id from orders where {BIG_APP_ORDERS}")}}
+        items = collections.Counter(i for (i,) in c.execute("select order_id from order_items where {BIG_APP_ITEMS}"))
         r["lost_orders"], r["lost_items"] = len(acked - orders), len(acked - set(items))
         r["extra_items"] = sum(k - 1 for k in items.values())  # each checkout inserts one item
         r["seed_orders_lost_or_changed"] = c.execute({_seed_changed_sql("orders", f"id = g * {BIG_STEP}", BIG_ROWS, BIG_SEED_ORDER_COLUMNS)!r}).fetchone()[0]

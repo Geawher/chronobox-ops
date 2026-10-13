@@ -97,15 +97,16 @@ Details, confidence intervals and every table: [`results/`](results/README.md).
 
 | Model | Success alone → chronobox | Harmed users alone → chronobox | Cost / run (alone) |
 |---|---|---|---|
-| Opus 5.5 | 95% → 94% | 4% → 6% | $0.30 |
-| Opus 4.8 | 81% → 89% | 14% → 7% | $1.07 |
-| Sonnet 5 | 75% → 85% | 23% → 12% | $0.46 |
-| Sonnet 5.5 | 70% → 84% | 28% → 13% | $0.11 |
-| Haiku 4.5 | 29% → 39% | 55% → 43% | $0.15 |
+| Opus 5.5 | 96% → 96% | 3% → 4% | $0.30 |
+| Opus 4.8 | 82% → 89% | 13% → 7% | $1.08 |
+| Sonnet 5 | 75% → 85% | 24% → 12% | $0.46 |
+| Sonnet 5.5 | 72% → 83% | 26% → 14% | $0.11 |
+| Haiku 4.5 | 29% → 37% | 55% → 43% | $0.15 |
 
 With chronobox, four of the five models succeed more often and harm users less often; the
-clearest case is Sonnet 5.5 (+15 points of success, −16 points of harm, both outside
-chance). Opus 5.5 gains nothing: it already succeeds on 95% of runs alone. On the CTF
+clearest cases are Sonnet 5 (+11 points of success, −12 points of harm, both outside
+chance) and Sonnet 5.5 (+12 and −13, just inside chance). Opus 5.5 gains nothing: it
+already succeeds on 96% of runs alone. On the CTF
 tasks, Opus 5.5 and Sonnet 5.5 stop with a safeguard refusal, so those tasks measure the
 models' safeguards rather than their care; the harness disables Claude Code's silent
 fallback to another model, so every run is the named model's own work.
