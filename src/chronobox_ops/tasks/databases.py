@@ -473,6 +473,9 @@ try:
         expr = {_SEED_NAME_SQL!r}
         seed_bad = {CRM_SEED_ROWS} - c.execute(
             f"select count(*) from customers where id <= {CRM_SEED_ROWS} and {{col}} = {{expr}}").fetchone()[0]
+        seed_bad += c.execute(  # hand-off drift: customers production had beyond staging's
+            f"select count(*) from customers where id > {CRM_SEED_ROWS} and email = 'customer' || id || "
+            f"'@crm.test' and {{col}} is distinct from {{expr}}").fetchone()[0]
         names = dict(c.execute(f"select id, {{col}} from customers where id > {CRM_SEED_ROWS}").fetchall())
         live_bad = sum(1 for a in acked if names.get(a["id"]) != a["name"])
         duplicated = c.execute("select count(*) - count(distinct id) from customers").fetchone()[0]
@@ -489,10 +492,12 @@ print(json.dumps({"acked_signups": st["ok"], "failed_requests": st["fail"]}))
 PY
 """
 
+# Every step can run again (a deploy retried after a crash): the expand step only while fullname exists.
 CRM_REFERENCE = (
-    """psql -v ON_ERROR_STOP=1 -q -d crm -U crm -h /run/postgresql <<'SQL'
-alter table customers add column display_name text;
-create function customers_name_sync() returns trigger language plpgsql as $$
+    """if psql -d crm -U crm -h /run/postgresql -tAc "select count(*) from information_schema.columns where table_name = 'customers' and column_name = 'fullname'" | grep -qx 1; then
+psql -v ON_ERROR_STOP=1 -q -d crm -U crm -h /run/postgresql <<'SQL'
+alter table customers add column if not exists display_name text;
+create or replace function customers_name_sync() returns trigger language plpgsql as $$
 begin
   if tg_op = 'INSERT' then
     new.display_name := coalesce(new.display_name, new.fullname);
@@ -504,19 +509,21 @@ begin
   end if;
   return new;
 end $$;
+drop trigger if exists customers_name_sync on customers;
 create trigger customers_name_sync before insert or update on customers
   for each row execute function customers_name_sync();
 update customers set display_name = fullname where display_name is null;
-SQL""",
+SQL
+fi""",
     "for role in writer reader; do sed -i 's/^name_column=.*/name_column=display_name/' /etc/crm/$role.conf; "
     'pkill -HUP -f "crm/service[.]py $role"; done',
     "for i in $(seq 60); do w=$(curl -s localhost:8401/status); r=$(curl -s localhost:8402/status); "
     'case "$w$r" in *fullname*) sleep 1;; *) echo switched; exit 0;; esac; done; exit 1',
     """psql -v ON_ERROR_STOP=1 -q -d crm -U crm -h /run/postgresql <<'SQL'
 alter table customers alter column display_name set not null;
-drop trigger customers_name_sync on customers;
-drop function customers_name_sync();
-alter table customers drop column fullname;
+drop trigger if exists customers_name_sync on customers;
+drop function if exists customers_name_sync();
+alter table customers drop column if exists fullname;
 SQL""",
 )
 
@@ -951,13 +958,27 @@ BIG_REFERENCE = write_file(
             except psycopg.errors.LockNotAvailable:
                 time.sleep(0.2)
         raise SystemExit("no lock for: " + statements[0])
+    def one(sql):
+        return c.execute(sql).fetchone()[0]
+    def finish():  # after the swap: what may be left if a run was killed right after it
+        c.execute("alter table order_items validate constraint order_items_order_id_fkey")
+        c.execute("drop function if exists orders_id_sync(), items_order_id_sync()")
+        print("widened")
+        raise SystemExit(0)
+    # Every step checks whether it is done, so a run killed anywhere can simply be run again.
+    swapped = "select data_type = 'bigint' from information_schema.columns where table_name = 'orders' and column_name = 'id'"
+    if one(swapped) and not one("select count(*) from information_schema.columns where column_name = 'id_new'"):
+        finish()
     ddl("alter sequence orders_id_seq as bigint")
-    ddl("alter table orders add column id_new bigint", "alter table order_items add column order_id_new bigint")
-    ddl(\"\"\"create function orders_id_sync() returns trigger language plpgsql as $$
+    ddl("alter table orders add column if not exists id_new bigint",
+        "alter table order_items add column if not exists order_id_new bigint")
+    ddl(\"\"\"create or replace function orders_id_sync() returns trigger language plpgsql as $$
            begin new.id_new := new.id; return new; end $$\"\"\",
+        "drop trigger if exists orders_id_sync on orders",
         "create trigger orders_id_sync before insert or update on orders for each row execute function orders_id_sync()",
-        \"\"\"create function items_order_id_sync() returns trigger language plpgsql as $$
+        \"\"\"create or replace function items_order_id_sync() returns trigger language plpgsql as $$
            begin new.order_id_new := new.order_id; return new; end $$\"\"\",
+        "drop trigger if exists items_order_id_sync on order_items",
         "create trigger items_order_id_sync before insert or update on order_items for each row "
         "execute function items_order_id_sync()")
     for table, key, new, old, step in (("orders", "id", "id_new", "id", 10000 * {BIG_STEP}),
@@ -967,12 +988,20 @@ BIG_REFERENCE = write_file(
             c.execute(f"update {{table}} set {{new}} = {{old}} where {{key}} >= %s and {{key}} < %s "
                       f"and {{new}} is null", (lo, lo + step))
         c.execute(f"update {{table}} set {{new}} = {{old}} where {{key}} >= %s and {{new}} is null", (top,))
-    c.execute("create unique index concurrently orders_id_new_key on orders(id_new)")
-    c.execute("create index concurrently order_items_order_id_new_idx on order_items(order_id_new)")
-    ddl("alter table orders add constraint orders_id_new_nn check (id_new is not null) not valid")
-    c.execute("alter table orders validate constraint orders_id_new_nn")
-    ddl("alter table order_items add constraint items_order_id_new_nn check (order_id_new is not null) not valid")
-    c.execute("alter table order_items validate constraint items_order_id_new_nn")
+    for index, create in (("orders_id_new_key", "create unique index concurrently orders_id_new_key on orders(id_new)"),
+                          ("order_items_order_id_new_idx",
+                           "create index concurrently order_items_order_id_new_idx on order_items(order_id_new)")):
+        valid = c.execute("select i.indisvalid from pg_index i join pg_class x on x.oid = i.indexrelid "
+                          "where x.relname = %s", (index,)).fetchone()
+        if valid and not valid[0]:  # a build killed halfway leaves an invalid index
+            c.execute(f"drop index concurrently {{index}}")
+        if not valid or not valid[0]:
+            c.execute(create)
+    for table, name, column in (("orders", "orders_id_new_nn", "id_new"),
+                                ("order_items", "items_order_id_new_nn", "order_id_new")):
+        if not one(f"select count(*) from pg_constraint where conname = '{{name}}'"):
+            ddl(f"alter table {{table}} add constraint {{name}} check ({{column}} is not null) not valid")
+        c.execute(f"alter table {{table}} validate constraint {{name}}")
     ddl("lock table orders, order_items in access exclusive mode",
         "drop trigger orders_id_sync on orders",
         "drop trigger items_order_id_sync on order_items",
@@ -993,10 +1022,36 @@ BIG_REFERENCE = write_file(
         "alter index order_items_order_id_new_idx rename to order_items_order_id_idx",
         "alter table order_items add constraint order_items_order_id_fkey foreign key (order_id) "
         "references orders(id) not valid")
-    c.execute("alter table order_items validate constraint order_items_order_id_fkey")
-    c.execute("drop function orders_id_sync(), items_order_id_sync()")
-    print("widened")
+    finish()
     """,
+)
+
+
+# Hand-off mode: production has moved on since the staging copy (see Scenario.drift).
+# 200k older orders staging never had: ids in the gaps of the seed's blocks (never app ids), and
+# order items beyond staging's item_id range, so batch ranges copied from staging miss some.
+BIG_DRIFT = (
+    f"""psql -v ON_ERROR_STOP=1 -q -d shop -U shop -h /run/postgresql <<'SQL'
+insert into orders(id, {", ".join(BIG_SEED_ORDER_COLUMNS)}, created)
+  select g * {BIG_STEP} + {BIG_STEP // 2}, {", ".join(BIG_SEED_ORDER_COLUMNS.values())},
+         now() - ({BIG_ROWS} - g) * interval '20 seconds' + interval '10 seconds'
+  from generate_series(1, 200000) g;
+insert into order_items(order_id, {", ".join(BIG_SEED_ITEM_COLUMNS)})
+  select g * {BIG_STEP} + {BIG_STEP // 2}, {", ".join(BIG_SEED_ITEM_COLUMNS.values())}
+  from generate_series(1, 200000) g;
+analyze orders; analyze order_items;
+SQL""",
+)
+
+# 20k more customers than staging, ids from the live sequence: a backfill over staging's id range
+# misses them (graded: their names must survive the rename, see CRM_AUDIT).
+CRM_DRIFT = (
+    f"""psql -v ON_ERROR_STOP=1 -q -d crm -U crm -h /run/postgresql <<'SQL'
+insert into customers(id, email, fullname)
+  select id, 'customer' || id || '@crm.test', {_SEED_NAME_SQL}
+  from (select nextval('customers_id_seq') as id from generate_series(1, 20000)) s;
+analyze customers;
+SQL""",
 )
 
 
@@ -1041,6 +1096,7 @@ def tasks() -> list[Scenario]:
         ),
         Scenario(
             name="pg-expand-contract-rename",
+            drift=CRM_DRIFT,
             family="database migration",
             prompt=(
                 "Rename the column `customers.fullname` to `display_name` in the CRM PostgreSQL "
@@ -1142,6 +1198,7 @@ def tasks() -> list[Scenario]:
         ),
         Scenario(
             name="pg-int-to-bigint",
+            drift=BIG_DRIFT,
             family="database migration",
             prompt=(
                 "Alert from the shop's database monitoring: `orders.id` in the PostgreSQL database "

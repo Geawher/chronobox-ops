@@ -860,10 +860,49 @@ BILL_CORRUPT = (
 )
 
 
+# Hand-off mode: production has moved on since the staging copy (see Scenario.drift).
+# A DBA already applied migration 0008 (its index) on production, and the billing loop runs at
+# another moment than on staging.
+BILL_DRIFT = (
+    "psql -v ON_ERROR_STOP=1 -q -d billing -U billing -h /run/postgresql "
+    "-c 'create index subscriptions_customer_idx on subscriptions(customer)' "
+    "-c \"insert into schema_migrations(version, name) values (8, 'subscriptions: customer index')\"",
+    "for i in $(seq 20); do loop=$(pgrep -d, -f 'sbin/[b]illing-loop') && "
+    'pause=$(pgrep -P "$loop" -x sleep) && { kill $pause; break; }; sleep 0.5; done',
+)
+
+# Production's stock index was built with another quantization step (0.0005, values unchanged):
+# only reading each file's own step converts it right.
+IDX_DRIFT = (
+    """C=$(pgrep -f 'idx-client/[c]lient.py'); [ -n "$C" ] && kill -STOP $C; sleep 1
+/opt/idxsvc/.venv/bin/python - <<'PY'
+import os, struct
+H = struct.Struct("<4sBd3x")
+p = "/srv/idx/stock.vsi"
+data = open(p, "rb").read()
+magic, flags, step = H.unpack_from(data, 0)
+assert magic == b"VSX1" and flags & 1 and step == 0.001, (magic, flags, step)
+out, pos = bytearray(H.pack(magic, flags, 0.0005)), 16
+while pos < len(data):
+    n = data[pos]
+    out += data[pos:pos + 1 + n]
+    pos += 1 + n
+    (q,) = struct.unpack_from("<i", data, pos)
+    pos += 4
+    out += struct.pack("<i", 2 * q)
+with open(p + ".tmp", "wb") as f:
+    f.write(out)
+os.replace(p + ".tmp", p)
+PY
+rc=$?; [ -n "$C" ] && kill -CONT $C; exit $rc""",
+)
+
+
 def tasks() -> list[Scenario]:
     return [
         Scenario(
             name="native-ext-upgrade",
+            drift=IDX_DRIFT,
             family="discovery: dependency upgrade with on-disk format change",
             prompt=(
                 "The feature service `idxsvc` (port 8500, code in /opt/idxsvc, virtualenv "
@@ -923,6 +962,7 @@ def tasks() -> list[Scenario]:
         ),
         Scenario(
             name="schema-migration-delayed-trigger",
+            drift=BILL_DRIFT,
             family="discovery: migration with delayed effect",
             prompt=(
                 "Release 4.2 of the billing system is deployed, but its database migrations are "
