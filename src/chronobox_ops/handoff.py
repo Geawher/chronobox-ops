@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import io
 import json
 import os
@@ -182,15 +183,25 @@ async def serve_staging(task: str, profile: Profile, socket: Path, root: Path, e
         await workspace.backend.cleanup()
 
 
+def socket_path(run: Run) -> Path:
+    """The staging socket of ``run``: short, outside the run folder, and unique per run and process.
+
+    Unix socket paths are limited to 107 bytes, so the name is cut; a digest of the whole name keeps
+    runs whose names share a long prefix (the seeds of one task) apart.
+    """
+    digest = hashlib.sha1(run.name.encode()).hexdigest()[:10]
+    return SOCKETS / f"{run.name[:24]}-{digest}-{os.getpid()}.sock"
+
+
 async def start_staging(run: Run, folder: Path) -> tuple[asyncio.subprocess.Process, Path]:
     """Start the staging server process and wait until its machine is up.
 
     Raises:
         RuntimeError: If the machine does not come up.
     """
-    # Unix socket paths are limited to 107 bytes: keep it short, outside the run folder.
-    socket = SOCKETS / f"{run.name[:40]}-{os.getpid()}.sock"
+    socket = socket_path(run)
     socket.parent.mkdir(parents=True, exist_ok=True)
+    socket.unlink(missing_ok=True)
     command = [
         sys.executable, "-m", "chronobox_ops.handoff", "serve", "--task", run.task, "--profile", run.setup,
         "--socket", str(socket), "--root", str(folder / "staging-vms"), "--exports", str(folder / "exports"),
@@ -214,6 +225,7 @@ async def stop_staging(process: asyncio.subprocess.Process, socket: Path) -> Non
     except (OSError, TimeoutError, ServiceError):
         process.kill()
         await process.wait()
+    socket.unlink(missing_ok=True)
 
 
 # ---- the agent

@@ -16,6 +16,7 @@ from chronobox_ops.handoff import (
     _archive,
     _deploy,
     outcome,
+    socket_path,
     summary,
 )
 from chronobox_ops.tasks import TASKS
@@ -35,6 +36,13 @@ def test_every_handoff_task_exists_and_drifts() -> None:
     """The hand-off tasks are benchmark tasks, and each makes production differ from staging."""
     for name in TASK_NAMES:
         assert TASKS[name].drift, name
+
+
+def test_seeds_of_a_long_task_name_get_their_own_staging_socket() -> None:
+    """Names that only differ past the cut (the seed) still map to different, short socket paths."""
+    sockets = {socket_path(Run("schema-migration-delayed-trigger", "chronobox", seed)) for seed in range(5)}
+    assert len(sockets) == 5
+    assert all(len(str(socket)) < 107 for socket in sockets)
 
 
 def _result(**fields: object) -> dict:
