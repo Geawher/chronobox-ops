@@ -4,11 +4,12 @@ import json
 from pathlib import Path
 
 import pytest
-from chronobox import FirecrackerBackend, MachineSpec
+from chronobox import FirecrackerBackend, MachineSpec, Profile
 from chronobox.handoff import SCRIPT_FILE, STATE_DIR
 
 from chronobox_ops.handoff import (
     KILLED,
+    REVIEW_COMMAND,
     TASK_NAMES,
     Outcome,
     Production,
@@ -30,6 +31,15 @@ def test_the_prompt_says_production_differs_and_how_the_script_is_run() -> None:
         assert prompt.startswith(TASKS["pg-int-to-bigint"].prompt)
         assert "not an exact copy" in prompt and "`./apply.sh`" in prompt and "run it again" in prompt
     assert "/root/handoff/apply.sh" in alone and "verify_script" in chronobox
+
+
+def test_the_reviewed_setup_is_chronobox_with_a_reviewer() -> None:
+    """``reviewed`` runs on the chronobox profile and is told the same as chronobox; only its staging
+    server differs (a reviewer command)."""
+    reviewed = Run("pg-int-to-bigint", "reviewed", 0)
+    assert reviewed.profile is Profile.CHRONOBOX
+    assert reviewed.prompt() == Run("pg-int-to-bigint", "chronobox", 0).prompt()
+    assert "claude -p --model" in REVIEW_COMMAND
 
 
 def test_every_handoff_task_exists_and_drifts() -> None:
