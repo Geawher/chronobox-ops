@@ -646,6 +646,7 @@ def parser() -> argparse.ArgumentParser:
     running.add_argument("--seeds", type=int, default=3)
     running.add_argument("--first-seed", type=int, default=0)
     running.add_argument("--model", default="claude-sonnet-5-5")
+    running.add_argument("--max-usd", type=float, default=MAX_USD, help="the agent's budget per run")
     running.add_argument("--out", type=Path, required=True)
     running.add_argument("--resume", action="store_true", help="skip runs that finished without a harness error")
     regrading = commands.add_parser("regrade", help="grade saved hand-offs again")
@@ -681,7 +682,7 @@ async def main(argv: list[str] | None = None) -> None:
         names = args.names or sorted(path.parent.name for path in args.out.glob("*/result.json"))
         await regrade(args.out, names, productions, args.jobs)
         return
-    options = Options(args.out, args.model, args.jobs, productions)
+    options = Options(args.out, args.model, args.jobs, productions, max_usd=args.max_usd)
     seeds = range(args.first_seed, args.first_seed + args.seeds)
     runs = [Run(task, setup, seed) for seed in seeds for task in args.tasks for setup in args.setups]
     if args.resume:
