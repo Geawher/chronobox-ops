@@ -456,7 +456,10 @@ async def finish(run: Run, result: dict[str, Any], folder: Path, productions: tu
                 measured = graded.get(Production.DRIFT) or graded.get(Production.SAME) or {}
                 apply_seconds = [s["seconds"] for s in measured.get("steps", []) if s["file"] == SCRIPT_FILE]
                 kill_at = max(MIN_KILL_S, (apply_seconds[-1] if apply_seconds else 2 * MIN_KILL_S) / 2)
-            graded[production] = await grade(run.task, scripts, folder, production, kill_at)
+            try:
+                graded[production] = await grade(run.task, scripts, folder, production, kill_at)
+            except Exception as error:  # recorded as this production's harness error, the grid goes on
+                graded[production] = {"error": f"grading failed: {error!r}"[-500:]}
     result["productions"] = graded
     for production in productions:
         result[f"{production}_outcome"] = outcome(result, production)
