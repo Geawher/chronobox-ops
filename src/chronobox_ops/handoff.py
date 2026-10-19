@@ -20,11 +20,14 @@ hand-off runs as the user would: ``./assume.sh`` if there is one (production sto
 fails, and is graded as it is), ``./pre.sh``, then ``./apply.sh``; each by its ``#!`` line, with
 ``/bin/sh`` when it has none.
 
-Setups (MCP tools only, like the live benchmark's ``alone`` / ``chronobox``):
+Setups (MCP tools only, like the live benchmark's ``alone`` / ``chronobox``, except ``full-*``):
 
 - ``alone``: ``run`` / ``wait`` on staging; the hand-off is ``/root/handoff/apply.sh`` there;
 - ``chronobox``: forks, checkpoints and ``verify_script`` (which replays the script on a fresh
-  fork of staging as it started, with retries and kills); the hand-off is what it saved.
+  fork of staging as it started, with retries and kills); the hand-off is what it saved;
+- ``reviewed``: chronobox, with a reviewer model reading each passed hand-off's check;
+- ``full-chronobox``: chronobox for normal Claude Code (its own tools in a sandbox container), as
+  the live benchmark's ``full-chronobox``: real use, comparable with the live runs.
 
     chronobox-ops handoff run --tasks pg-int-to-bigint --setups alone chronobox --seeds 3 --out runs/h
     chronobox-ops handoff validate [TASK ...] --out runs/h-validate
@@ -65,8 +68,9 @@ from chronobox.handoff import (
 from chronobox.service import ServiceError, get_remote
 
 from chronobox_ops import claude_trace
-from chronobox_ops.harness.agents import SAME_MODEL_ENV, TOKEN_ENV
+from chronobox_ops.harness.agents import SAME_MODEL_ENV, TOKEN_ENV, AgentOptions, prepare
 from chronobox_ops.harness.machine import GradeMode, ScenarioMachine, scenario_workspace
+from chronobox_ops.harness.setups import AgentKind, Setup
 from chronobox_ops.scoring import report_reward
 from chronobox_ops.tasks import TASKS
 
@@ -107,10 +111,16 @@ DELIVERY = {
     "alone": f"Save the final script on this machine at {STAGING_SCRIPT}.",
     "chronobox": "Hand it over with `verify_script`: what it saved is what I run, nothing else.",
     "reviewed": "Hand it over with `verify_script`: what it saved is what I run, nothing else.",
+    "full-chronobox": "Hand it over with `verify_script`: what it saved is what I run, nothing else.",
 }
 # chronobox, plus a reviewer model that reads each passed hand-off's check against the goal.
 REVIEWED = "reviewed"
-PROFILES = {"alone": Profile.ALONE, "chronobox": Profile.CHRONOBOX, REVIEWED: Profile.CHRONOBOX}
+# Normal Claude Code (its own tools in a sandbox container), as in the live benchmark's full-* setups.
+FULL = "full-"
+PROFILES = {
+    "alone": Profile.ALONE, "chronobox": Profile.CHRONOBOX, REVIEWED: Profile.CHRONOBOX,
+    "full-chronobox": Profile.CHRONOBOX,
+}  # fmt: skip
 REVIEW_MODEL = "claude-sonnet-5-5"
 # The reviewer: Claude Code without tools, settings or MCP servers, in an empty folder.
 REVIEW_COMMAND = (
@@ -118,6 +128,10 @@ REVIEW_COMMAND = (
     "--strict-mcp-config --no-session-persistence"
 )
 CLOSING = " There is no internet access. When you are done, reply with a short summary."
+FULL_CLOSING = (
+    " Your own workspace, where your other tools run, is a separate sandbox with internet access; it "
+    "is neither staging nor production. When you are done, reply with a short summary."
+)
 SETUPS = tuple(DELIVERY)
 
 
@@ -157,9 +171,14 @@ class Run:
         """The staging machine's chronobox profile."""
         return PROFILES[self.setup]
 
+    @property
+    def full(self) -> bool:
+        """Whether the agent is normal Claude Code with its own tools in a sandbox container."""
+        return self.setup.startswith(FULL)
+
     def prompt(self) -> str:
         """The task's own prompt, then the hand-off it must produce in this setup."""
-        return TASKS[self.task].prompt + STAGING + DELIVERY[self.setup] + CLOSING
+        return TASKS[self.task].prompt + STAGING + DELIVERY[self.setup] + (FULL_CLOSING if self.full else CLOSING)
 
 
 @dataclass(frozen=True)
@@ -252,7 +271,10 @@ async def stop_staging(process: asyncio.subprocess.Process, socket: Path) -> Non
 
 
 async def run_agent(run: Run, options: Options, socket: Path, folder: Path) -> dict[str, Any]:
-    """Headless Claude Code with only the chronobox MCP tools of the setup; returns its trace summary."""
+    """Headless Claude Code with only the chronobox MCP tools of the setup (or, for full setups, its
+    normal tools too, in a sandbox container); returns its trace summary."""
+    if run.full:
+        return await _run_full_agent(run, options, socket, folder)
     front_end = [sys.executable, "-m", "chronobox.server", "--connect", str(socket), "--profile", run.profile]
     if run.profile is Profile.CHRONOBOX:
         front_end.append("--handoff")
@@ -282,6 +304,35 @@ async def run_agent(run: Run, options: Options, socket: Path, folder: Path) -> d
             agent.kill()
             await agent.wait()
             timed_out = True
+    summary = claude_trace.summarize(folder / "trace.jsonl")
+    return {**summary, "agent_timeout": timed_out, "agent_s": round(time.monotonic() - started)}
+
+
+async def _run_full_agent(run: Run, options: Options, socket: Path, folder: Path) -> dict[str, Any]:
+    """Normal Claude Code in a sandbox container, reaching staging through the chronobox MCP over
+    HTTP (with ``verify_script``), launched as the live benchmark's full setups are."""
+    home = (folder / "home").resolve()  # docker mounts only absolute paths
+    home.mkdir(exist_ok=True)
+    setup = Setup(run.setup, AgentKind.FULL, run.profile)
+    agent_options = AgentOptions(model=options.model, max_usd=options.max_usd, token_file=options.token_file)
+    launch = await prepare(setup, run.prompt(), socket, home, agent_options, handoff=run.profile is Profile.CHRONOBOX)
+    launch.env["MCP_TOOL_TIMEOUT"] = str(int(options.agent_timeout * 1000))
+    started = time.monotonic()
+    timed_out = False
+    try:
+        with (folder / "trace.jsonl").open("w") as trace, (folder / "agent.err").open("w") as errors:
+            agent = await asyncio.create_subprocess_exec(
+                *launch.command, cwd=home, env=launch.env, stdout=trace, stderr=errors, stdin=asyncio.subprocess.DEVNULL
+            )
+            try:
+                await asyncio.wait_for(agent.wait(), options.agent_timeout)
+            except TimeoutError:
+                agent.kill()
+                await agent.wait()
+                timed_out = True
+    finally:
+        for cleanup in launch.cleanup:
+            await cleanup()
     summary = claude_trace.summarize(folder / "trace.jsonl")
     return {**summary, "agent_timeout": timed_out, "agent_s": round(time.monotonic() - started)}
 
