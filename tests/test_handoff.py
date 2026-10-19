@@ -24,6 +24,8 @@ from chronobox_ops.handoff import (
     socket_path,
     summary,
 )
+from chronobox_ops.harness.agents import front_end_args
+from chronobox_ops.harness.setups import AgentKind, Setup
 from chronobox_ops.tasks import TASKS
 
 VM_READY = os.access("/dev/kvm", os.R_OK | os.W_OK) and all((default_vm_dir() / f).exists() for f in VM_FILES)
@@ -47,6 +49,23 @@ def test_the_reviewed_setup_is_chronobox_with_a_reviewer() -> None:
     assert reviewed.profile is Profile.CHRONOBOX
     assert reviewed.prompt() == Run("pg-int-to-bigint", "chronobox", 0).prompt()
     assert "claude -p --model" in REVIEW_COMMAND
+
+
+def test_the_full_setup_is_chronobox_for_normal_claude_code() -> None:
+    """``full-chronobox`` hands over with verify_script like chronobox, but is told its own sandbox
+    is not the machine (and has internet), as the live benchmark's full setups are."""
+    full = Run("pg-int-to-bigint", "full-chronobox", 0)
+    assert full.profile is Profile.CHRONOBOX and full.full
+    assert not Run("pg-int-to-bigint", "chronobox", 0).full
+    assert "verify_script" in full.prompt() and "separate sandbox with internet access" in full.prompt()
+    assert "no internet access" not in full.prompt()
+
+
+def test_a_full_handoff_agent_gets_verify_script() -> None:
+    """The full agent's chronobox front end serves the hand-off tools; live runs' does not."""
+    setup = Setup("full-chronobox", AgentKind.FULL, Profile.CHRONOBOX)
+    assert "--handoff" in front_end_args(setup, Path("m.sock"), handoff=True)
+    assert "--handoff" not in front_end_args(setup, Path("m.sock"))
 
 
 def test_every_handoff_task_exists_and_drifts() -> None:

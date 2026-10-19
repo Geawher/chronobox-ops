@@ -71,8 +71,11 @@ def base_claude_args(prompt: str, options: AgentOptions) -> list[str]:
     ]  # fmt: skip
 
 
-async def prepare(setup: Setup, prompt: str, machine_socket: Path, home: Path, options: AgentOptions) -> AgentLaunch:
-    """Everything needed to start the agent for ``setup``; ``home`` is its empty working directory."""
+async def prepare(
+    setup: Setup, prompt: str, machine_socket: Path, home: Path, options: AgentOptions, handoff: bool = False
+) -> AgentLaunch:
+    """Everything needed to start the agent for ``setup``; ``home`` is its empty working directory.
+    With ``handoff``, the chronobox front end also serves ``verify_script`` (hand-off mode)."""
     env = {**os.environ, "MCP_TOOL_TIMEOUT": MCP_TOOL_TIMEOUT_MS, **SAME_MODEL_ENV}
     token_file = options.token_file.expanduser()
     if token_file.exists():
@@ -82,7 +85,7 @@ async def prepare(setup: Setup, prompt: str, machine_socket: Path, home: Path, o
     args = base_claude_args(prompt, options)
     if setup.kind is AgentKind.SINGLE_SHOT:
         return AgentLaunch([options.claude, *args, "--strict-mcp-config", "--tools", ""], env)
-    front_end = _front_end_args(setup, machine_socket)
+    front_end = front_end_args(setup, machine_socket, handoff)
     if setup.kind is AgentKind.MCP_ONLY:
         config = home / "mcp.json"
         config.write_text(json.dumps({"mcpServers": {"chronobox": {"command": sys.executable, "args": front_end}}}))
@@ -139,8 +142,11 @@ async def _prepare_full(
     )
 
 
-def _front_end_args(setup: Setup, machine_socket: Path) -> list[str]:
-    return ["-m", "chronobox.server", "--connect", str(machine_socket), "--profile", setup.profile.value]
+def front_end_args(setup: Setup, machine_socket: Path, handoff: bool = False) -> list[str]:
+    """The chronobox MCP front end's arguments (after the Python executable) for ``setup``; with
+    ``handoff`` it also serves ``verify_script``."""
+    args = ["-m", "chronobox.server", "--connect", str(machine_socket), "--profile", setup.profile.value]
+    return args + (["--handoff"] if handoff else [])
 
 
 def _free_port(host: str) -> int:
