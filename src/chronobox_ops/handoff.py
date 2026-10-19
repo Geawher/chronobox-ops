@@ -111,7 +111,7 @@ DELIVERY = {
 # chronobox, plus a reviewer model that reads each passed hand-off's check against the goal.
 REVIEWED = "reviewed"
 PROFILES = {"alone": Profile.ALONE, "chronobox": Profile.CHRONOBOX, REVIEWED: Profile.CHRONOBOX}
-REVIEW_MODEL = "claude-haiku-4-5-20251001"
+REVIEW_MODEL = "claude-sonnet-5-5"
 # The reviewer: Claude Code without tools, settings or MCP servers, in an empty folder.
 REVIEW_COMMAND = (
     'cd "$(mktemp -d)" && claude -p --model {model} --setting-sources "" --tools "" '
