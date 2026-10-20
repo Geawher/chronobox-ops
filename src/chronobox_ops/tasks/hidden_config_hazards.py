@@ -1104,6 +1104,14 @@ QKV_CORRUPT = (
 )
 
 
+# Hand-off mode: production has moved on since the staging copy (see Scenario.drift).
+# An earlier failover left n3 leading on production (n1 leads on staging), done the safe way.
+QKV_DRIFT = (
+    "for i in $(seq 10); do qkvctl transfer-leader n3 && break; sleep 2; done; sleep 3; qkvctl status; "
+    '[ "' + QKV_LEADER + '" = n3 ]',
+)
+
+
 def tasks() -> list[Scenario]:
     return [
         Scenario(
@@ -1158,6 +1166,7 @@ def tasks() -> list[Scenario]:
         ),
         Scenario(
             name="cluster-rolling-restart-quorum",
+            drift=QKV_DRIFT,
             family="discovery: rolling restart",
             prompt=(
                 "Our 3-node `qkv` cluster (docs in /opt/qkv/README, admin tool `qkvctl`) must run "

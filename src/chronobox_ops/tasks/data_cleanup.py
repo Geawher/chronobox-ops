@@ -255,6 +255,9 @@ def log(path):
     return [l.split() for l in open(path) if l.endswith("\\n")]
 acked, signups = log("/var/lib/shop/orders.log"), log("/var/lib/shop/signups.log")
 person = {{cid: a[0] for cid, a in accounts.items()}}
+for j, src in enumerate(range(41, 13001, 41)):  # hand-off drift: later duplicates of seed accounts
+    if src in person:
+        person[100001 + j] = person[src]
 profile = {{cid: (a[1], a[2]) for cid, a in accounts.items()}}
 for cid, n in signups:
     person[int(cid)] = "new" + n
@@ -346,9 +349,72 @@ def _dedupe_script(group_key: str) -> str:
     )
 
 
+# Hand-off mode: production has moved on since the staging copy (see Scenario.drift).
+# B: duplicate accounts signed up after the staging copy (ids 100001-100317, one per seed account
+# with id % 41 == 0, graded through DEDUPE_AUDIT); A: support already merged a fifth of the groups
+# by hand, the README way. B must run first.
+DEDUPE_DRIFT = (
+    """python3 - <<'PY'
+import random, unicodedata, psycopg
+def plain(s):
+    return "".join(ch for ch in unicodedata.normalize("NFD", s) if not unicodedata.combining(ch))
+def name_variant(rng, name):
+    first, last = name.split(" ", 1)
+    options = [name, name.lower(), name.upper(), f"{first}  {last}", f" {name}", f"{name} ",
+               first.lower().capitalize() + " " + last.lower().capitalize()]
+    if plain(name) != name:
+        options += [plain(name)] * 4 + [plain(name).lower()] * 2 + [plain(first) + " " + last] * 2
+    return rng.choice(options)
+def email_variant(rng, email):
+    user, domain = email.split("@")
+    return rng.choice([email, user.capitalize() + "@" + domain, user + "@" + domain.upper(), email.upper()])
+rng = random.Random(23)
+with psycopg.connect("dbname=shop user=shop host=/run/postgresql") as c:
+    c.execute("lock table customers in share row exclusive mode")
+    src = c.execute("select id, email, name from customers where mod(id, 41) = 0 and id <= 13000 order by id").fetchall()
+    rows = [(100001 + j, email_variant(rng, email.lower()), name_variant(rng, " ".join(name.split())))
+            for j, (_, email, name) in enumerate(src)]
+    cur = c.cursor()
+    with cur.copy("copy customers(id, email, name) from stdin") as cp:
+        for r in rows:
+            cp.write_row(r)
+    cur.execute("select setval('customers_id_seq', greatest((select last_value from customers_id_seq), %s))",
+                (100000 + len(rows),))
+print(len(rows), "accounts added")
+PY""",
+    f"""{SHOP_PSQL} <<'SQL'
+create extension if not exists unaccent;
+do $$
+declare g int[]; d int;
+begin
+  for g in select array_agg(id order by id) from customers
+           group by lower(email), lower(regexp_replace(btrim(unaccent(name)), '\\s+', ' ', 'g'))
+           having count(*) > 1 and mod(min(id), 5) = 0 loop
+    foreach d in array g[2:array_length(g, 1)] loop
+      perform 1 from customers where id = d for update;
+      insert into customer_merges(old_id, new_id) values (d, g[1]);
+      update orders set customer_id = g[1] where customer_id = d;
+      delete from customers where id = d;
+    end loop;
+  end loop;
+end $$;
+SQL""",
+)
+
+# 60k more events than staging (ids in a reserved block, not counted as app events by the probe),
+# inserted in batches with checkpoints so the small WAL volume never fills.
+VACUUM_DRIFT = (
+    f'for lo in $(seq 1 10000 60000); do {SHOP_PSQL} -qc "insert into events(id, created, kind, source, payload) '
+    "select 1000000000 + g, now() - (60001 - g) * interval '1 second', "
+    "(array['click','view','purchase','signup'])[1 + g % 4], 'web-' || (g % 7), "
+    'md5(g::text) || repeat(md5((g * 3)::text), 6) from generate_series($lo, $lo + 9999) g" -c checkpoint; done',
+)
+
+
 def dedupe_customers() -> Scenario:
     return Scenario(
         name="dedupe-customers",
+        drift=DEDUPE_DRIFT,
         family="data cleanup: merge rule",
         prompt=(
             "Many of the shop's customers have more than one customer account (they signed up again "
@@ -541,8 +607,8 @@ out = {{"acked_events": st["ok"], "failed_requests": st["fail"]}}
 try:
     with psycopg.connect("{SHOP_DSN}", connect_timeout=2) as c:
         c.execute("set statement_timeout = 2500")
-        seed, app = c.execute("select count(*) filter (where id <= {EVENTS}), count(*) filter (where id > {EVENTS}) "
-                              "from events").fetchone()
+        seed, app = c.execute("select count(*) filter (where id <= {EVENTS}), count(*) filter (where id > {EVENTS} "
+                              "and id < 1000000000) from events").fetchone()  # drift rows: reserved ids
     out["lost_events"] = max(0, st["ok"] - app) + max(0, {EVENTS_KEPT} - seed)
 except Exception:
     pass
@@ -628,6 +694,7 @@ VACUUM_REFERENCE = write_file(
 def vacuum_full_bloat() -> Scenario:
     return Scenario(
         name="vacuum-full-bloat",
+        drift=VACUUM_DRIFT,
         family="data cleanup: disk space",
         prompt=(
             f"The PostgreSQL volume of the shop's event pipeline ({VOLUME}) is nearly 90% full. Most "
