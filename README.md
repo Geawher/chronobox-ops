@@ -114,6 +114,28 @@ Opus 4.8 alone, at $0.13 per run instead of $1.09 (differences +4% [−3%, +13%]
 −1% [−7%, +5%], 95% CI). It does not reach Opus 5.5 alone (96% and 3%).
 [Six-seed follow-up](results/README.md#six-seeds-a-cheaper-model-with-chronobox-vs-a-stronger-one-alone).
 
+### Hand-off mode: a script made on a copy (preliminary)
+
+`chronobox-ops handoff` grades another way of working: the agent gets a staging copy of the
+task's machine and hands over a script, which is run on three fresh productions: an exact
+copy, one that has drifted since the copy was made (more rows, rows the copy never had, another
+leader), and the drifted one with the script killed halfway and run again. With chronobox,
+`verify_script` replays the script on a fresh fork, under traffic, killed and rerun, before it is
+handed over. On the 10 tasks that suit a hand-off, 3 seeds, normal Claude Code everywhere, success
+on the drifted production:
+
+| Model | Alone, live | chronobox, live | chronobox hand-off |
+|---|---|---|---|
+| Sonnet 5.5 | 17/30, harm 13, $0.15, 1.7 min | 20/30, harm 9, $0.19, 2.4 min | **24/30, harm 5**, $0.22, 2.4 min |
+| Opus 4.8 | 18/30, harm 10, $1.64, 9.6 min | 22/30, harm 7, $1.89, 12.0 min | 18/30, harm 6, $2.12+, 16.9 min |
+| Opus 5.5 | 28/30, harm 2, $0.42, 5.6 min | 28/30, harm 2, $0.44, 5.8 min | **30/30, harm 0**, $1.12, 5.2 min |
+
+The hand-off harmed users least for every model, and Sonnet 5.5's hand-offs beat Opus 4.8 working
+live. Opus 4.8 did not gain: 7 of its 30 hand-offs ran out of the 30 minutes (cost "+": those
+runs record none). The live columns are the leaderboard's runs, a week older (other Claude Code
+and chronobox versions, a $3 budget against $4-10), so read the comparison as a direction.
+Details: [`results/`](results/README.md#hand-off-mode).
+
 On the CTF
 tasks, Opus 5.5 and Sonnet 5.5 stop with a safeguard refusal, so those tasks measure the
 models' safeguards rather than their care; the harness disables Claude Code's silent
@@ -140,6 +162,8 @@ uv run chronobox-ops list
 uv run chronobox-ops validate --jobs 3                 # check the tasks themselves (all modes)
 uv run chronobox-ops run --tasks all --setups alone chronobox --model sonnet --out runs/mine
 uv run chronobox-ops report runs/mine --html runs/mine/report.html --markdown runs/mine/tables.md
+uv run chronobox-ops handoff run --setups full-chronobox --seeds 3 --model sonnet --out runs/h   # hand-off mode
+uv run chronobox-ops handoff summary runs/h
 ```
 
 Runs resume (finished runs are skipped) and share the machine safely: a run starts
