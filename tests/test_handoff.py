@@ -4,21 +4,26 @@ import json
 from pathlib import Path
 
 import pytest
-from chronobox import FirecrackerBackend, MachineSpec
+from chronobox import FirecrackerBackend, MachineSpec, Profile
 from chronobox.handoff import SCRIPT_FILE, STATE_DIR
 
+from chronobox_ops import handoff
 from chronobox_ops.handoff import (
     KILLED,
+    REVIEW_COMMAND,
     TASK_NAMES,
     Outcome,
     Production,
     Run,
     _archive,
     _deploy,
+    finish,
     outcome,
     socket_path,
     summary,
 )
+from chronobox_ops.harness.agents import front_end_args
+from chronobox_ops.harness.setups import AgentKind, Setup
 from chronobox_ops.tasks import TASKS
 
 
@@ -32,6 +37,32 @@ def test_the_prompt_says_production_differs_and_how_the_script_is_run() -> None:
     assert "/root/handoff/apply.sh" in alone and "verify_script" in chronobox
 
 
+def test_the_reviewed_setup_is_chronobox_with_a_reviewer() -> None:
+    """``reviewed`` runs on the chronobox profile and is told the same as chronobox; only its staging
+    server differs (a reviewer command)."""
+    reviewed = Run("pg-int-to-bigint", "reviewed", 0)
+    assert reviewed.profile is Profile.CHRONOBOX
+    assert reviewed.prompt() == Run("pg-int-to-bigint", "chronobox", 0).prompt()
+    assert "claude -p --model" in REVIEW_COMMAND
+
+
+def test_the_full_setup_is_chronobox_for_normal_claude_code() -> None:
+    """``full-chronobox`` hands over with verify_script like chronobox, but is told its own sandbox
+    is not the machine (and has internet), as the live benchmark's full setups are."""
+    full = Run("pg-int-to-bigint", "full-chronobox", 0)
+    assert full.profile is Profile.CHRONOBOX and full.full
+    assert not Run("pg-int-to-bigint", "chronobox", 0).full
+    assert "verify_script" in full.prompt() and "separate sandbox with internet access" in full.prompt()
+    assert "no internet access" not in full.prompt()
+
+
+def test_a_full_handoff_agent_gets_verify_script() -> None:
+    """The full agent's chronobox front end serves the hand-off tools; live runs' does not."""
+    setup = Setup("full-chronobox", AgentKind.FULL, Profile.CHRONOBOX)
+    assert "--handoff" in front_end_args(setup, Path("m.sock"), handoff=True)
+    assert "--handoff" not in front_end_args(setup, Path("m.sock"))
+
+
 def test_every_handoff_task_exists_and_drifts() -> None:
     """The hand-off tasks are benchmark tasks, and each makes production differ from staging."""
     for name in TASK_NAMES:
@@ -43,6 +74,22 @@ def test_seeds_of_a_long_task_name_get_their_own_staging_socket() -> None:
     sockets = {socket_path(Run("schema-migration-delayed-trigger", "chronobox", seed)) for seed in range(5)}
     assert len(sockets) == 5
     assert all(len(str(socket)) < 107 for socket in sockets)
+
+
+async def test_a_grading_failure_is_that_runs_harness_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A production machine that fails mid-grade (here: a timeout) marks that production as a harness
+    error in result.json instead of stopping the grid."""
+
+    async def stuck(*_: object) -> dict:
+        """A grade whose machine never answers."""
+        raise TimeoutError
+
+    monkeypatch.setattr(handoff, "grade", stuck)
+    (tmp_path / "handoff").mkdir()
+    (tmp_path / "handoff" / SCRIPT_FILE).write_text("true\n")
+    result = await finish(Run("pg-int-to-bigint", "chronobox", 0), {}, tmp_path, (Production.SAME,))
+    assert result["same_outcome"] == Outcome.HARNESS
+    assert "TimeoutError" in json.loads((tmp_path / "result.json").read_text())["productions"]["same"]["error"]
 
 
 def _result(**fields: object) -> dict:
