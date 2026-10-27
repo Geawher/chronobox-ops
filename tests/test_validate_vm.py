@@ -18,12 +18,14 @@ needs_vm = pytest.mark.skipif(not VM_READY, reason="needs /dev/kvm and a built c
 
 @needs_vm
 async def test_sessiond_reconfigure_is_valid() -> None:
+    """``sessiond-reconfigure`` behaves as required untouched, with its reference fix and its naive one."""
     modes = [Mode.UNTOUCHED, Mode.REFERENCE, Mode.NAIVE]
     assert await validate_all(["sessiond-reconfigure"], jobs=3, modes=modes) == {"sessiond-reconfigure": []}
 
 
 @needs_vm
 async def test_checker_secrets_are_invisible_to_the_agent_while_a_check_runs(tmp_path: Path) -> None:
+    """While a hidden check reads a secret file, the agent can neither list nor read it."""
     task = TASKS["ctf-vault"]
     secret = task.secrets[0]
     workspace = scenario_workspace(task, Profile.ALONE, root=tmp_path)

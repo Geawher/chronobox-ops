@@ -552,6 +552,11 @@ if todo:  # nothing left (a re-run after everything went out): billrun refuses a
 
 
 def _pay_fix(include_pending: bool) -> str:
+    """Shell command that charges the batch items payd has not seen.
+
+    With ``include_pending``, debits waiting in the open bank file count as seen too (the reference fix);
+    without it they do not (the naive one).
+    """
     pending = 'seen |= {d["reference"] for d in get("/v1/bankfile")["debits"]}' if include_pending else ""
     return "python3 - <<'PYX'\n" + PAY_MISSING.strip().replace("INCLUDE_PENDING", pending) + "\nPYX"
 
@@ -1252,6 +1257,7 @@ PY""",
 
 
 def tasks() -> list[Scenario]:
+    """The irreversible or delayed operation tasks."""
     return [
         Scenario(
             name="half-run-payment-batch",

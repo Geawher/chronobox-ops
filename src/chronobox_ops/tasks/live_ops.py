@@ -213,6 +213,7 @@ SESSIOND_CHECK = textwrap.dedent(f"""
 
 
 def tasks() -> list[Scenario]:
+    """The live-operations tasks."""
     return [
         Scenario(
             name="db-lock-incident",

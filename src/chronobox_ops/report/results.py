@@ -56,6 +56,7 @@ def export(results: list[dict[str, Any]]) -> str:
 
 
 def _stored(source: Path) -> Iterable[tuple[dict[str, Any], Path | None]]:
+    """The results in ``source`` (an exported JSON file or a grid's output directory), each with its run directory."""
     if source.is_file():
         return [(result, None) for result in json.loads(source.read_text())]
     return [(json.loads(path.read_text()), path.parent) for path in sorted(source.glob("*/*/result.json"))]
@@ -81,6 +82,7 @@ class Cell:
 
     @classmethod
     def of(cls, results: list[dict[str, Any]]) -> Cell | None:
+        """The aggregate of ``results``; None if there are none."""
         if not results:
             return None
         rewards = [result["reward"] for result in results]
@@ -103,6 +105,7 @@ class Cell:
 
 def select(results: list[dict[str, Any]], *, model: str | None = None, setup: str | None = None,
            tasks: Iterable[str] | None = None) -> list[dict[str, Any]]:  # fmt: skip
+    """The results matching every filter given: model, setup and task names."""
     wanted = set(tasks) if tasks is not None else None
     return [
         result
@@ -114,11 +117,13 @@ def select(results: list[dict[str, Any]], *, model: str | None = None, setup: st
 
 
 def setups_in(results: list[dict[str, Any]]) -> list[str]:
+    """The setups present in ``results``, in report order."""
     present = {result["condition"] for result in results}
     return [setup for setup in SETUP_ORDER if setup in present]
 
 
 def models_in(results: list[dict[str, Any]]) -> list[str]:
+    """The models present in ``results``, grouped by family, then by name."""
     return sorted({result["model"] for result in results}, key=lambda model: (_family_rank(model), model))
 
 
@@ -134,9 +139,11 @@ def model_setup_cells(results: list[dict[str, Any]], min_runs: int = 1) -> list[
 
 
 def _family_rank(model: str) -> int:
+    """Position of the model's family in ``MODEL_FAMILIES``; unknown families come last."""
     return next((rank for rank, family in enumerate(MODEL_FAMILIES) if family in model), len(MODEL_FAMILIES))
 
 
 def tasks_in(results: list[dict[str, Any]]) -> list[str]:
+    """The tasks present in ``results``, in task order."""
     present = {result["scenario"] for result in results}
     return [name for name in TASKS if name in present]

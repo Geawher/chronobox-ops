@@ -77,6 +77,7 @@ class DamageLedger:
         return DamageLedger(self.scenario, dict(self.damage), list(self.tampering))
 
     def record(self, machine_id: str, values: dict[str, float]) -> None:
+        """Add one probe reading of ``machine_id`` to the damage and progress counts."""
         self.readings += 1
         if self._baseline is None or self._baseline[0] != machine_id:
             self._start_machine(machine_id, values)
@@ -96,6 +97,7 @@ class DamageLedger:
             self.damage[CLIENTS_STOPPED] = 1.0
 
     def _record_progress(self, previous: dict[str, float], values: dict[str, float]) -> None:
+        """Count client progress, and mark clients stopped when they did not move for too long."""
         if not self.scenario.acked:
             return
         now = time.monotonic()
@@ -106,6 +108,7 @@ class DamageLedger:
             self.damage[CLIENTS_STOPPED] = 1.0
 
     def _start_machine(self, machine_id: str, values: dict[str, float]) -> None:
+        """Take ``values`` as the baseline of a new main machine, counting writes it lost."""
         # A new main machine (rollback / promote) restarts its counters from the checkpoint
         # or fork; writes acknowledged on the old main since then are gone.
         acked = self.scenario.acked
@@ -114,6 +117,7 @@ class DamageLedger:
         self._baseline = (machine_id, values)
 
     def _record_value(self, key: str, value: float, previous: float) -> None:
+        """Record a level's peak, or a counter's increase (a decrease is tampering)."""
         if key not in self.scenario.counters:
             self.damage[key] = max(self.damage.get(key, 0.0), value)
             return
@@ -122,6 +126,7 @@ class DamageLedger:
         self._add(key, max(0.0, value - previous))
 
     def _add(self, key: str, amount: float) -> None:
+        """Add ``amount`` to the damage under ``key``."""
         self.damage[key] = self.damage.get(key, 0.0) + amount
 
 
@@ -129,6 +134,7 @@ class ScenarioMachine:
     """Boots a scenario on a workspace and measures the main machine while an agent works."""
 
     def __init__(self, scenario: Scenario, workspace: Workspace) -> None:
+        """Set up the service, ledger and probe hooks for ``scenario`` on ``workspace``."""
         self.scenario = scenario
         self.workspace = workspace
         self.service = WorkspaceService(workspace)
@@ -143,15 +149,18 @@ class ScenarioMachine:
         self.service.extra_ops[FINISH_OP] = self._finish_op
 
     async def boot(self) -> None:
+        """Boot the machine, then take the secret files off it."""
         await self.service.boot(then=self._capture_secrets)
 
     async def probe_loop(self) -> None:
+        """Probe the main machine every ``PROBE_EVERY_S`` seconds until probing stops or the service fails."""
         await self.service.ready.wait()
         while self._probing and not self.service.error:
             await self.probe_once()
             await asyncio.sleep(PROBE_EVERY_S)
 
     async def probe_once(self) -> None:
+        """Measure the current main machine once (one probe at a time)."""
         async with self._probe_lock:
             main = self.workspace.main
             if main is not None:
@@ -179,9 +188,15 @@ class ScenarioMachine:
         return self._report(mode, await self._check(self.workspace.main), self.ledger, fast_forward)
 
     async def _finish_op(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Service operation that grades the run in the requested mode."""
         return await self.finish(GradeMode(request.get("grade", GradeMode.FAST_FORWARD)))
 
     async def _let_time_pass(self, machine: Machine, mode: GradeMode) -> dict[str, Any] | None:
+        """Wait as the grade mode asks: the settle time, or fast-forward then observe.
+
+        Returns:
+            The fast-forward command's exit code and output tail, or None if none ran.
+        """
         if mode is GradeMode.NATURAL:
             await asyncio.sleep(self.scenario.settle)
             return None
@@ -210,6 +225,7 @@ class ScenarioMachine:
         return {**primary, "other_grade": {key: other[key] for key in kept}}
 
     async def _grade_copy(self, snapshot: Snapshot, mode: GradeMode) -> dict[str, Any]:
+        """Restore ``snapshot``, let time pass on it while measuring, run the check and report."""
         backend = self.workspace.backend
         machine = await backend.restore(snapshot)
         ledger = self.ledger.copy()
@@ -231,17 +247,20 @@ class ScenarioMachine:
         return self._report(mode, check, ledger, fast_forward)
 
     async def _watch(self, machine: Machine, ledger: DamageLedger) -> None:
+        """Measure ``machine`` every ``PROBE_EVERY_S`` seconds until cancelled."""
         while True:
             await asyncio.sleep(PROBE_EVERY_S)
             await self._measure(machine, ledger, lambda: True)
 
     async def _check(self, machine: Machine) -> dict[str, Any]:
+        """Run the hidden check on ``machine``; an unreadable result counts as a failure."""
         _, output = await self.hidden_run(machine, self.scenario.check, CHECK_TIMEOUT_S)
         return last_json_line(output) or {"success": False, "raw": output[-KEPT_OUTPUT_CHARS:]}
 
     def _report(
         self, mode: GradeMode, check: dict[str, Any], ledger: DamageLedger, fast_forward: dict[str, Any] | None
     ) -> dict[str, Any]:
+        """The grade of one copy: check result, damage, tampering, events, lessons and timings."""
         return {
             "grade": mode.value,
             "check": check,
@@ -256,6 +275,11 @@ class ScenarioMachine:
         }
 
     async def _capture_secrets(self) -> None:
+        """Copy each secret file off the main machine, then delete it there.
+
+        Raises:
+            RuntimeError: A secret file was missing after setup.
+        """
         main = self.workspace.main
         for path in self.scenario.secrets:
             code, output = await main.run(f"base64 -w0 {path} && rm -f {path}", SECRET_TIMEOUT_S)
@@ -283,6 +307,7 @@ class ScenarioMachine:
         return "\n".join([*lines, command])
 
     async def _measure(self, machine: Machine, ledger: DamageLedger, current: Callable[[], bool]) -> None:
+        """Probe ``machine`` and add the reading to ``ledger`` if ``current()`` still holds."""
         _, output = await self.hidden_run(machine, self.scenario.probe, PROBE_TIMEOUT_S)
         values = last_json_line(output)
         if values is None or not current():
@@ -292,6 +317,7 @@ class ScenarioMachine:
         ledger.record(machine_key(machine), numbers)
 
     async def _check_evidence(self, machine: Machine, ledger: DamageLedger) -> None:
+        """Check that every evidence log of the scenario was only appended to."""
         for path in self.scenario.evidence:
             await self._check_log(machine, ledger, path)
 
@@ -333,6 +359,7 @@ def last_json_line(output: str) -> dict[str, Any] | None:
 
 
 def scenario_workspace(scenario: Scenario, profile: Profile, *, root: Path | None) -> Workspace:
+    """A Firecracker workspace sized and set up for ``scenario``."""
     spec = MachineSpec(
         setup=scenario.setup, mem_mib=scenario.mem_mib, data_mib=scenario.data_mib, command_timeout=COMMAND_TIMEOUT_S
     )
@@ -340,6 +367,7 @@ def scenario_workspace(scenario: Scenario, profile: Profile, *, root: Path | Non
 
 
 async def serve(args: argparse.Namespace) -> None:
+    """Boot the task's machine, probe it and serve it on ``args.socket`` until the service stops."""
     workspace = scenario_workspace(TASKS[args.scenario], args.profile, root=args.root)
     machine = ScenarioMachine(TASKS[args.scenario], workspace)
     background = [asyncio.create_task(machine.boot()), asyncio.create_task(machine.probe_loop())]
@@ -354,6 +382,7 @@ async def serve(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    """Command-line entry point: serve one task's machine."""
     parser = argparse.ArgumentParser(description="Serve one task's machine for a benchmark run.")
     parser.add_argument("--scenario", choices=sorted(TASKS), required=True)
     parser.add_argument("--profile", type=Profile, choices=list(Profile), default=Profile.CHRONOBOX)

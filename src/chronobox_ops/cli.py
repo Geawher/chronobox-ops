@@ -40,11 +40,13 @@ def _resolve_names(requested: list[str], known: dict[str, object], kind: str) ->
 
 
 def cmd_list(args: argparse.Namespace) -> None:
+    """Print every task with its family."""
     for task in TASKS.values():
         print(f"{task.name:34} {task.family}")
 
 
 def cmd_validate(args: argparse.Namespace) -> None:
+    """Validate the tasks, print how many are valid and exit 1 if any fails."""
     names = _resolve_names(args.tasks or [ALL], TASKS, "tasks")
     problems = asyncio.run(
         validate_all(
@@ -66,6 +68,7 @@ def cmd_validate(args: argparse.Namespace) -> None:
 
 
 def cmd_run(args: argparse.Namespace) -> None:
+    """Run every task × setup × seed with Claude Code."""
     options = RunOptions(
         out=args.out,
         agent_dirs=args.agent_dirs,
@@ -85,6 +88,7 @@ def _published(text: str) -> str:
 
 
 def cmd_report(args: argparse.Namespace) -> None:
+    """Write the requested HTML, Markdown and JSON reports; print the leaderboard if none is asked."""
     results = load(args.runs)
     if args.html:
         args.html.write_text(_published(html.render(results, args.title)))
@@ -97,17 +101,20 @@ def cmd_report(args: argparse.Namespace) -> None:
 
 
 def cmd_validation_report(args: argparse.Namespace) -> None:
+    """Write the validation report from the attempt log and, optionally, run results."""
     runs = load(args.runs) if args.runs else []
     args.out.write_text(validation.render(validation.read_attempts(args.log), runs))
 
 
 def cmd_handoff(args: argparse.Namespace) -> None:
+    """Hand the remaining arguments to the hand-off runner."""
     from chronobox_ops import handoff  # needs chronobox with script hand-offs
 
     asyncio.run(handoff.main(args.rest))
 
 
 def parser() -> argparse.ArgumentParser:
+    """The command-line parser, one subcommand per ``cmd_*`` handler."""
     root = argparse.ArgumentParser(prog="chronobox-ops", description=__doc__.splitlines()[0])
     commands = root.add_subparsers(required=True)
 
@@ -167,6 +174,7 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Parse the command line and run the chosen subcommand."""
     args = parser().parse_args()
     args.handler(args)
 

@@ -68,11 +68,16 @@ class Run:
     scheduler: MemoryScheduler
 
     def __post_init__(self) -> None:
+        """Derive the run's name, its output directory and its scheduler entry."""
         self.name = f"{self.task.name}/{self.setup.name}-{self.seed}"
         self.run_dir = self.options.out / self.task.name / f"{self.setup.name}-{self.seed}"
         self.active = ActiveRun(self.name)
 
     async def execute(self) -> dict[str, Any]:
+        """Run once and write ``result.json``; a finished run is read back unless ``force`` is set.
+
+        A run stopped for lack of memory leaves nothing behind and comes back with ``stopped_for_memory``.
+        """
         done = self.run_dir / "result.json"
         if done.exists() and not self.options.force:
             return json.loads(done.read_text())
@@ -110,6 +115,12 @@ class Run:
         return result
 
     async def _with_machine(self) -> dict[str, Any]:
+        """Start the task machine once memory allows, run the agent, grade the machine and stop it.
+
+        Raises:
+            RunStopped: The watchdog stopped the run for lack of memory.
+            RuntimeError: The machine failed to start or returned no grade report.
+        """
         extra = FULL_ACCESS_EXTRA_MIB if self.setup.kind is AgentKind.FULL else 0
         if self.options.grade is GradeMode.BOTH:
             extra += 2 * self.task.mem_mib  # two copies of the end state are graded
@@ -136,6 +147,7 @@ class Run:
                 await self._stop_machine(machine)
 
     async def _start_machine(self) -> asyncio.subprocess.Process:
+        """Start the task machine's process, logging to ``machine.log``."""
         with open(self.run_dir / "machine.log", "wb") as log:
             machine = await asyncio.create_subprocess_exec(
                 sys.executable, "-m", "chronobox_ops.harness.machine", "--scenario", self.task.name,
@@ -146,6 +158,7 @@ class Run:
         return machine
 
     async def _run_agent(self) -> dict[str, Any]:
+        """Run the agent on the task and summarize its trace; single-shot replies are then submitted."""
         prompt = self.setup.prompt(self.task.prompt)
         launch = await prepare(self.setup, prompt, self.machine_socket, self.home, self.options.agent)
         self.active.processes += launch.helpers
@@ -179,6 +192,7 @@ class Run:
         return False
 
     async def _submit(self, reply: str) -> dict[str, Any]:
+        """Run the script from a single-shot reply once on the main machine; keep the output tail."""
         script = extract_script(reply)
         (self.run_dir / "submission.sh").write_text(script or "")
         if not script:
@@ -189,6 +203,11 @@ class Run:
         return {"submitted": True, "submission_output": output[-SUBMISSION_KEPT_CHARS:]}
 
     async def _wait_for_machine(self) -> dict[str, Any]:
+        """The machine's status once its socket appears.
+
+        Raises:
+            RuntimeError: The socket did not appear after ``SOCKET_WAIT_TRIES`` tries.
+        """
         for _ in range(SOCKET_WAIT_TRIES):
             if self.machine_socket.exists():
                 return await request(self.machine_socket, {"op": "status"})
@@ -196,6 +215,7 @@ class Run:
         raise RuntimeError("the task machine did not come up")
 
     async def _stop_machine(self, machine: asyncio.subprocess.Process) -> None:
+        """Ask the machine to shut down; kill its process if that fails or takes too long."""
         try:
             await request(self.machine_socket, {"op": "shutdown"})
             await asyncio.wait_for(machine.wait(), SHUTDOWN_TIMEOUT_S)
@@ -206,6 +226,7 @@ class Run:
 
 
 def _scored(task: Scenario, report: dict[str, Any]) -> dict[str, Any]:
+    """The fields of ``result.json`` taken from the machine's grade report, with the reward."""
     reward = report_reward(task, report)
     scored = {
         "grade": report["grade"],
@@ -235,6 +256,7 @@ async def run_grid(
     pending = [(name, setup, seed) for seed in range(seeds) for name in task_names for setup in setup_names]
 
     async def one(job: tuple[str, str, int]) -> dict[str, Any]:
+        """Execute one (task, setup, seed) within the job limit and print its main fields."""
         name, setup, seed = job
         async with limit:
             result = await Run(TASKS[name], SETUPS[setup], seed, options, scheduler).execute()

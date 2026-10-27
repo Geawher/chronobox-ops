@@ -734,6 +734,7 @@ VAULT_MAKE = """
 
 
 def tasks() -> list[Scenario]:
+    """The security and CTF tasks."""
     return [
         Scenario(
             name="api-key-rotation",
