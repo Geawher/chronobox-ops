@@ -8,7 +8,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@v5
-      - run: uv sync
+      # chronobox's latest main, not the commit in uv.lock (local runs keep using the lock)
+      - run: uv sync --upgrade-package chronobox
       - run: uv run ruff check src tests && uv run ruff format --check src tests
       # Real-VM tests need /dev/kvm and the chronobox image; they are skipped here.
       - run: uv run pytest -q
