@@ -1,11 +1,13 @@
 """Hand-off mode: prompts, verdicts and summaries; the kill-and-retry deploy on a real machine."""
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 from chronobox import FirecrackerBackend, MachineSpec
 from chronobox.handoff import SCRIPT_FILE, STATE_DIR
+from chronobox.vm import VM_FILES, default_vm_dir
 
 from chronobox_ops.handoff import (
     KILLED,
@@ -20,6 +22,9 @@ from chronobox_ops.handoff import (
     summary,
 )
 from chronobox_ops.tasks import TASKS
+
+VM_READY = os.access("/dev/kvm", os.R_OK | os.W_OK) and all((default_vm_dir() / f).exists() for f in VM_FILES)
+needs_vm = pytest.mark.skipif(not VM_READY, reason="needs /dev/kvm and a built chronobox VM image")
 
 
 def test_the_prompt_says_production_differs_and_how_the_script_is_run() -> None:
@@ -99,6 +104,7 @@ def test_the_summary_counts_per_setup_and_production(tmp_path: Path) -> None:
 
 
 @pytest.mark.vm
+@needs_vm
 async def test_retry_kills_the_script_midway_and_runs_it_again(tmp_path: Path) -> None:
     """With a kill time, apply.sh is killed (with what it started) and run again from the start;
     a script that ends before the kill time is not run twice."""
