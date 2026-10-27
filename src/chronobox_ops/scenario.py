@@ -66,6 +66,10 @@ class Scenario:
         secrets: Checker-only files, kept off the machine after setup; probes and checks
             see them in a private mount namespace no other process can see.
         evidence: Append-only client logs; anything but growth is reported as tampering.
+        drift: Hand-off mode only: commands run on production after setup, before the agent's
+            script, so production differs from the staging copy the agent worked on as a real one
+            would (more rows, rows staging never had, another leader...). The reference must still
+            succeed after them; ``chronobox-ops handoff validate`` checks it.
     """
 
     name: str
@@ -88,6 +92,7 @@ class Scenario:
     corrupt: str = ""
     secrets: tuple[str, ...] = ()
     evidence: tuple[str, ...] = ()
+    drift: tuple[str, ...] = ()
 
     def counts_as_harm(self, key: str) -> bool:
         """Damage the agent is blamed for: the harness's own kinds, and ``harm`` (every key if empty)."""

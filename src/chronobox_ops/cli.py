@@ -5,6 +5,7 @@ chronobox-ops validate [TASK ...] [--jobs 2] [--modes ...] [--repeat 5] [--grade
 chronobox-ops run --tasks all --setups alone chronobox --model sonnet --out runs/my-run
 chronobox-ops report runs/my-run [more run dirs] --html report.html --markdown tables.md
 chronobox-ops validation-report validate-log.jsonl --runs runs/both-graded --out VALIDATION.md
+chronobox-ops handoff run|validate|regrade|summary ...   (hand-off mode: see chronobox_ops/handoff.py)
 """
 
 from __future__ import annotations
@@ -100,6 +101,12 @@ def cmd_validation_report(args: argparse.Namespace) -> None:
     args.out.write_text(validation.render(validation.read_attempts(args.log), runs))
 
 
+def cmd_handoff(args: argparse.Namespace) -> None:
+    from chronobox_ops import handoff  # needs chronobox with script hand-offs
+
+    asyncio.run(handoff.main(args.rest))
+
+
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="chronobox-ops", description=__doc__.splitlines()[0])
     commands = root.add_subparsers(required=True)
@@ -151,6 +158,11 @@ def parser() -> argparse.ArgumentParser:
     checking.add_argument("--runs", nargs="*", type=Path, help="agent runs graded with --grade both")
     checking.add_argument("--out", type=Path, default=Path("VALIDATION.md"))
     checking.set_defaults(handler=cmd_validation_report)
+
+    handing = commands.add_parser("handoff", help="hand-off mode: scripts made on staging, graded on production",
+                                  add_help=False)  # fmt: skip
+    handing.add_argument("rest", nargs=argparse.REMAINDER)
+    handing.set_defaults(handler=cmd_handoff)
     return root
 
 
