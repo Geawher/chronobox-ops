@@ -283,6 +283,12 @@ docs/AUTHORING.md   how to write a task
 results/            the published runs, every table, and the scripts that rebuild them
 ```
 
+## Citing
+
+If you use the benchmark, please cite it with the metadata in [CITATION.cff](CITATION.cff)
+(GitHub's "Cite this repository" button gives BibTeX). [CHANGELOG.md](CHANGELOG.md) lists what
+changed between versions.
+
 ## License
 
 Apache-2.0, see [LICENSE](LICENSE).

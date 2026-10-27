@@ -1,12 +1,29 @@
 [project]
 name = "chronobox-ops"
-version = "0.1.0"
+version = "0.2.0"
 description = "A benchmark of coding agents on live systems: did they solve the task, and what did they break on the way?"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
+authors = [{ name = "Jawher Jabri" }]
 requires-python = ">=3.12"
 dependencies = ["chronobox"]
+keywords = ["benchmark", "ai-agents", "coding-agents", "devops", "sre", "llm-evaluation", "claude-code", "firecracker"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: System :: Systems Administration",
+]
+
+[project.urls]
+Homepage = "https://github.com/Geawher/chronobox-ops"
+Results = "https://github.com/Geawher/chronobox-ops/blob/main/results/README.md"
+Changelog = "https://github.com/Geawher/chronobox-ops/blob/main/CHANGELOG.md"
+chronobox = "https://github.com/Geawher/chronobox"
 
 [project.scripts]
 chronobox-ops = "chronobox_ops.cli:main"

@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use this benchmark, please cite it as below."
+title: "chronobox-ops: a benchmark of coding agents on live systems"
+abstract: >-
+  37 operations tasks on live Linux machines with real services, data and clients, each with a
+  trap a careful engineer avoids. Runs are graded on success and on the harm done to users on the
+  way, comparing Claude Code alone with Claude Code using chronobox's forks of the live machine.
+authors:
+  - family-names: Jabri
+    given-names: Jawher
+version: 0.2.0
+date-released: 2026-10-27
+license: Apache-2.0
+repository-code: "https://github.com/Geawher/chronobox-ops"
+keywords:
+  - benchmark
+  - AI agents
+  - DevOps
+  - site reliability engineering
