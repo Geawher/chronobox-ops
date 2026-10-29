@@ -16,6 +16,7 @@
 - `report --skip-tasks`; `handoff validate` exits 1 on an invalid task; `handoff run` resumes by
   default (`--force` reruns), like `run` ([#9]).
 - Two task checks fixed ([#3]).
+- Uses chronobox 0.2.0, so `uv run chronobox setup` installs the VM files ([#12]).
 
 ### Docs
 - The README: results first, how a task works, a quick start; the details in [docs/](docs/README.md)
