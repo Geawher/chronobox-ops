@@ -18,8 +18,9 @@
 - Two task checks fixed ([#3]).
 
 ### Docs
-- The README: results first, how a task works, run it yourself, method and limitations;
-  CONTRIBUTING.md, templates, and this file ([#11], [#12]).
+- The README: results first, how a task works, a quick start; the details in [docs/](docs/README.md)
+  (running, tasks, grading, method and limitations); CONTRIBUTING.md, templates, and this file
+  ([#11], [#12]).
 
 ### CI
 - Tests run against chronobox's latest `main` ([#8]).
