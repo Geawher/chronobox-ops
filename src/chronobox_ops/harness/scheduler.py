@@ -24,6 +24,7 @@ MEMINFO = Path("/proc/meminfo")
 
 
 def available_mib() -> int:
+    """The host's available memory in MiB, from ``/proc/meminfo``."""
     for line in MEMINFO.read_text().splitlines():
         if line.startswith("MemAvailable:"):
             return int(line.split()[1]) // 1024
@@ -40,6 +41,7 @@ class ActiveRun:
     stopped_for_memory: bool = False
 
     def stop(self) -> None:
+        """Mark the run stopped for memory and kill its processes."""
         self.stopped_for_memory = True
         for process in self.processes:
             if process.returncode is None:
@@ -57,6 +59,7 @@ async def _take_lock() -> int:
 
 
 def _lock_blocking() -> int:
+    """Open the admission lock file and wait for an exclusive lock on it; returns the descriptor."""
     lock = os.open(LOCK_FILE, os.O_CREAT | os.O_RDWR, 0o666)
     try:
         fcntl.flock(lock, fcntl.LOCK_EX)
@@ -67,6 +70,7 @@ def _lock_blocking() -> int:
 
 
 def _release_taken(taking: asyncio.Future[int]) -> None:
+    """Release a lock that was taken after its waiter was cancelled."""
     if not taking.cancelled() and taking.exception() is None:
         os.close(taking.result())
 
@@ -75,6 +79,7 @@ class MemoryScheduler:
     """Admits runs while memory allows, and stops the newest when free memory gets low."""
 
     def __init__(self) -> None:
+        """Start with no active runs."""
         self.active: list[ActiveRun] = []
 
     async def admit(self, need_mib: int) -> int:
@@ -93,6 +98,7 @@ class MemoryScheduler:
 
     @staticmethod
     def release(lock: int | None) -> None:
+        """Release a lock from ``admit``; None (already released) is ignored."""
         if lock is None:
             return
         try:
@@ -101,6 +107,7 @@ class MemoryScheduler:
             return  # already closed: the lock is released either way
 
     async def watchdog(self) -> None:
+        """Poll free memory; when it gets low, stop the newest active run so it can be retried."""
         while True:
             await asyncio.sleep(WATCHDOG_POLL_S)
             if available_mib() >= LOW_MIB:

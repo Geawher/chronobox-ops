@@ -1113,6 +1113,7 @@ QKV_DRIFT = (
 
 
 def tasks() -> list[Scenario]:
+    """The tasks whose dangerous configurations show only when tried."""
     return [
         Scenario(
             name="cache-tiering-eviction",

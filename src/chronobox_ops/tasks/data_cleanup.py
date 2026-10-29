@@ -412,6 +412,7 @@ VACUUM_DRIFT = (
 
 
 def dedupe_customers() -> Scenario:
+    """The ``dedupe-customers`` task: merge duplicate customer accounts on the live shop database."""
     return Scenario(
         name="dedupe-customers",
         drift=DEDUPE_DRIFT,
@@ -692,6 +693,7 @@ VACUUM_REFERENCE = write_file(
 
 
 def vacuum_full_bloat() -> Scenario:
+    """The ``vacuum-full-bloat`` task: reclaim space from a bloated table while events keep coming in."""
     return Scenario(
         name="vacuum-full-bloat",
         drift=VACUUM_DRIFT,
@@ -732,4 +734,5 @@ def vacuum_full_bloat() -> Scenario:
 
 
 def tasks() -> list[Scenario]:
+    """The data cleanup tasks."""
     return [dedupe_customers(), vacuum_full_bloat()]

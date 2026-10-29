@@ -1056,6 +1056,7 @@ SQL""",
 
 
 def tasks() -> list[Scenario]:
+    """The database tasks: schema changes, backfill and repair under live traffic."""
     return [
         Scenario(
             name="pg-backfill-under-traffic",

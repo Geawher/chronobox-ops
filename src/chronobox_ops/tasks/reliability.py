@@ -809,6 +809,7 @@ except FileNotFoundError:
 
 
 def tasks() -> list[Scenario]:
+    """The live state and reliability tasks."""
     return [
         Scenario(
             name="log-rotation-open-file",

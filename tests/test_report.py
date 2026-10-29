@@ -8,6 +8,7 @@ from chronobox_ops.report.results import export, load, models_in
 def write_run(
     root: Path, setup: str, seed: int, *, check_passed: bool, damage: dict[str, float], model: str = "sonnet"
 ) -> None:
+    """Write a minimal ``ledger-migrate`` result for ``setup`` and ``seed`` under ``root``."""
     run_dir = root / "ledger-migrate" / f"{setup}-{seed}"
     run_dir.mkdir(parents=True)
     result = {
@@ -26,6 +27,7 @@ def write_run(
 
 
 def test_report_from_runs(tmp_path: Path) -> None:
+    """Runs load with the right verdicts, and the leaderboard, damage, per-task and HTML reports show them."""
     for seed in range(5):  # the leaderboard omits setups with fewer than 5 runs
         write_run(tmp_path, "alone", seed, check_passed=False, damage={"failed_requests": 20.0})
         write_run(tmp_path, "chronobox", seed, check_passed=True, damage={})
@@ -47,6 +49,7 @@ def test_report_from_runs(tmp_path: Path) -> None:
 
 
 def test_exported_results_load_back_the_same(tmp_path: Path) -> None:
+    """Exported results load back with the same verdicts and rewards, without traces."""
     for seed in range(2):
         write_run(tmp_path / "runs", "alone", seed, check_passed=True, damage={"failed_requests": float(seed)})
     results = load([tmp_path / "runs"])
@@ -60,11 +63,13 @@ def test_exported_results_load_back_the_same(tmp_path: Path) -> None:
 
 
 def test_any_model_name_is_reported_weakest_family_first() -> None:
+    """Models are ordered Haiku, Sonnet, Opus, with unknown names last."""
     results = [{"model": model} for model in ("claude-opus-5-5", "my-model", "haiku", "claude-sonnet-5-5")]
     assert models_in(results) == ["haiku", "claude-sonnet-5-5", "claude-opus-5-5", "my-model"]
 
 
 def test_model_names_are_escaped_in_the_html_report(tmp_path: Path) -> None:
+    """Model names are HTML-escaped in the report."""
     for seed in range(5):
         write_run(tmp_path, "alone", seed, check_passed=True, damage={}, model="<b>m</b>")
     page = html.render(load([tmp_path]), "test")

@@ -36,6 +36,7 @@ Scores = dict[str, list[float]]  # task -> one score per run
 
 
 def load_runs() -> list[dict]:
+    """All runs from both result files, without the CTF tasks."""
     runs = json.loads((HERE / "results.json").read_text())
     runs += json.loads((HERE / "results-seeds.json").read_text())
     return [run for run in runs if run["scenario"] not in CTF_TASKS]
@@ -46,6 +47,7 @@ TASKS = sorted({run["scenario"] for run in RUNS})
 
 
 def scores(setup: Setup, metric: Metric, seeds: range) -> Scores:
+    """One 0/1 score per run of ``setup`` on ``metric``, grouped by task, for the given seeds."""
     by_task: Scores = defaultdict(list)
     for run in RUNS:
         if (run["model"], run["condition"]) == setup and run["seed"] in seeds:
@@ -54,6 +56,7 @@ def scores(setup: Setup, metric: Metric, seeds: range) -> Scores:
 
 
 def mean(by_task: Scores) -> float:
+    """Mean score over all runs of every task."""
     values = [value for task in TASKS for value in by_task[task]]
     return sum(values) / len(values)
 
@@ -70,6 +73,7 @@ def mean_cost(setup: Setup, seeds: range) -> float:
 
 
 def difference_interval(before: Scores, after: Scores) -> tuple[float, float]:
+    """95% bootstrap interval of ``mean(after) - mean(before)``, resampling tasks then runs."""
     rng = random.Random(0)
     differences = []
     for _ in range(RESAMPLES):
@@ -82,19 +86,23 @@ def difference_interval(before: Scores, after: Scores) -> tuple[float, float]:
 
 
 def describe(setup: Setup, seeds: range) -> str:
+    """A setup and its seeds as a table cell, e.g. ``Sonnet 5.5 alone, seeds 0–2``."""
     model, condition = setup
     return f"{MODEL_NAMES[model]} {condition.removeprefix('full-')}, seeds {seeds.start}–{seeds.stop - 1}"
 
 
 def percent_points(fraction: float) -> int:
+    """A fraction as whole percentage points."""
     return round(fraction * 100)
 
 
 def signed(points: int) -> str:
+    """Percentage points with an explicit sign; zero has none."""
     return f"{points:+d}%" if points else "0%"
 
 
 def comparison_row(before: Setup, after: Setup, before_seeds: range, after_seeds: range) -> str:
+    """One Markdown row comparing two setups: success, harmed users (with intervals) and cost."""
     cells = [describe(before, before_seeds), describe(after, after_seeds)]
     for metric in ("success", "harmed"):
         before_scores, after_scores = scores(before, metric, before_seeds), scores(after, metric, after_seeds)
@@ -110,6 +118,7 @@ def comparison_row(before: Setup, after: Setup, before_seeds: range, after_seeds
 
 
 def print_table(title: str, rows: list[tuple[Setup, Setup, range, range]]) -> None:
+    """Print a titled Markdown table with one comparison row per entry of ``rows``."""
     print(f"## {title}\n")
     print("| Before | After | Success | Difference (95% CI) | Harmed users | Difference (95% CI) | Cost / run |")
     print("|---|---|---|---|---|---|---|")
@@ -119,6 +128,7 @@ def print_table(title: str, rows: list[tuple[Setup, Setup, range, range]]) -> No
 
 
 def print_per_task(setups: list[tuple[Setup, range]]) -> None:
+    """Print successes per task for each setup, as ``successes/runs``."""
     print("## Successes per task\n")
     print("| Task | " + " | ".join(describe(setup, seeds) for setup, seeds in setups) + " |")
     print("|---|" + "---|" * len(setups))
@@ -129,6 +139,7 @@ def print_per_task(setups: list[tuple[Setup, range]]) -> None:
 
 
 def main() -> None:
+    """Print every table of ``six-seeds.md``."""
     opus48_alone = ("claude-opus-4-8", "full-alone")
     opus55_alone = ("claude-opus-5-5", "full-alone")
     sonnet55_alone = ("claude-sonnet-5-5", "full-alone")

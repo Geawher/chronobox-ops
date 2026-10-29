@@ -14,10 +14,12 @@ MUST_FAIL = (Mode.NAIVE, Mode.CORRUPT, Mode.ROLLBACK)
 
 
 def _harm_reasons(run: dict[str, Any]) -> list[str]:
+    """The forbidden harm that failed a run, with ``tampering`` if it tampered."""
     return [*run["reward"]["forbidden_harm"], *(["tampering"] if run["reward"]["tampered"] else [])]
 
 
 def read_attempts(log: Path) -> list[dict[str, Any]]:
+    """The validation attempts recorded in ``log``."""
     return read_log(log)
 
 
@@ -48,6 +50,7 @@ def render(attempts: list[dict[str, Any]], runs: list[dict[str, Any]]) -> str:
 
 
 def _task_table(attempts: list[dict[str, Any]]) -> list[str]:
+    """Per task, the attempts that behaved as required in each mode, fix time and grader wait."""
     by_task: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
     for attempt in attempts:
         by_task[attempt["task"]][attempt["mode"]].append(attempt)
@@ -77,10 +80,12 @@ def _task_table(attempts: list[dict[str, Any]]) -> list[str]:
 
 
 def _fraction(attempts: list[dict[str, Any]]) -> str:
+    """Attempts that behaved as required out of all; a dash when there are none."""
     return f"{sum(map(behaved, attempts))}/{len(attempts)}" if attempts else "–"
 
 
 def _catch_table(attempts: list[dict[str, Any]]) -> list[str]:
+    """For each must-fail mode, how many attempts failed the check and how many failed for harm."""
     lines = [
         "How the attempts that must fail were caught:",
         "",
@@ -101,6 +106,7 @@ def _catch_table(attempts: list[dict[str, Any]]) -> list[str]:
 
 
 def _agent_runs(runs: list[dict[str, Any]]) -> list[str]:
+    """How often both grades agree on agent runs graded both ways; empty if there are none."""
     graded = [run for run in runs if "other_grade" in run]
     if not graded:
         return []

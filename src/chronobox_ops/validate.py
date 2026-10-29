@@ -110,6 +110,7 @@ class Attempt:
 
 
 def modes_for(task: Scenario, requested: list[Mode]) -> list[Mode]:
+    """The requested modes that apply to ``task`` (e.g. no naive mode without a naive fix)."""
     applicable = {
         Mode.UNTOUCHED: True,
         Mode.REFERENCE: bool(task.reference),
@@ -159,6 +160,11 @@ async def attempt(
 
 
 async def _apply(task: Scenario, mode: Mode, workspace: Workspace) -> list[str]:
+    """Run the commands of ``mode`` on the main machine; rollback mode then rolls back after client writes.
+
+    Returns:
+        The output tail of each command that did not exit cleanly.
+    """
     commands = {
         Mode.UNTOUCHED: (),
         Mode.REFERENCE: task.reference,
@@ -179,6 +185,7 @@ async def _apply(task: Scenario, mode: Mode, workspace: Workspace) -> list[str]:
 
 
 def _graded(result: Attempt, task: Scenario, report: dict[str, Any]) -> None:
+    """Copy the grade report's verdict, harm and details into ``result``; a report without a check is an error."""
     if "check" not in report:
         result.error = report.get("error", "no report")
         return
@@ -224,6 +231,7 @@ async def validate_all(
     ]
 
     async def one(name: str, mode: Mode, round_: int) -> Attempt:
+        """Run one attempt within the job limit, print its outcome and append it to the log."""
         async with limit:
             done = await attempt(
                 TASKS[name], mode, round_, root=root / f"{name}-{mode}-{round_}", grade=grade, scheduler=scheduler
@@ -247,6 +255,7 @@ async def validate_all(
 
 
 def _logged(log: Path) -> list[Attempt]:
+    """The attempts already in ``log``; none if it does not exist."""
     if not log.exists():
         return []
     return [Attempt.from_json(entry) for entry in read_log(log)]

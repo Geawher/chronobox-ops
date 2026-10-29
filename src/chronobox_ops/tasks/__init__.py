@@ -37,6 +37,11 @@ MODULES = (
 
 
 def _collect() -> dict[str, Scenario]:
+    """Every module's tasks by name.
+
+    Raises:
+        ValueError: Two tasks share a name.
+    """
     tasks: dict[str, Scenario] = {}
     for module in MODULES:
         for scenario in module.tasks():
