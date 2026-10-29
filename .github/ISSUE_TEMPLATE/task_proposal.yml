@@ -1,0 +1,23 @@
+name: Task proposal
+description: An operations job with a trap, for the benchmark
+labels: [task]
+body:
+  - type: textarea
+    id: job
+    attributes:
+      label: The job
+      description: What the agent would be asked, as a user would ask it.
+    validations:
+      required: true
+  - type: textarea
+    id: trap
+    attributes:
+      label: The trap
+      description: What the obvious way breaks, and how a careful engineer avoids it. Where you saw it (an incident, a postmortem, documentation).
+    validations:
+      required: true
+  - type: textarea
+    id: harm
+    attributes:
+      label: How harm shows
+      description: What the users of the machine would notice (failed requests, lost writes, changed data...).

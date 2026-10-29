@@ -1,0 +1,17 @@
+name: A check or a result looks wrong
+description: A correct solution fails, a harmful one passes, or a number does not rebuild
+labels: [results]
+body:
+  - type: input
+    id: task
+    attributes:
+      label: Task
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+      description: Attach the run's result.json if you have one.
+    validations:
+      required: true
