@@ -17,13 +17,12 @@ from chronobox_ops.handoff import (
     Outcome,
     Production,
     Run,
-    _archive,
-    _deploy,
     finish,
     outcome,
     socket_path,
     summary,
 )
+from chronobox_ops.handoff.production import _archive, _deploy
 from chronobox_ops.harness.agents import front_end_args
 from chronobox_ops.harness.setups import AgentKind, Setup
 from chronobox_ops.tasks import TASKS
@@ -89,7 +88,7 @@ async def test_a_grading_failure_is_that_runs_harness_error(tmp_path: Path, monk
         """A grade whose machine never answers."""
         raise TimeoutError
 
-    monkeypatch.setattr(handoff, "grade", stuck)
+    monkeypatch.setattr(handoff.grid, "grade", stuck)
     (tmp_path / "handoff").mkdir()
     (tmp_path / "handoff" / SCRIPT_FILE).write_text("true\n")
     result = await finish(Run("pg-int-to-bigint", "chronobox", 0), {}, tmp_path, (Production.SAME,))

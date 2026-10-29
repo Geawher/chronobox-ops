@@ -5,7 +5,7 @@ chronobox-ops validate [TASK ...] [--jobs 2] [--modes ...] [--repeat 5] [--grade
 chronobox-ops run --tasks all --setups alone chronobox --model sonnet --out runs/my-run
 chronobox-ops report runs/my-run [more run dirs] --html report.html --markdown tables.md
 chronobox-ops validation-report validate-log.jsonl --runs runs/both-graded --out VALIDATION.md
-chronobox-ops handoff run|validate|regrade|summary ...   (hand-off mode: see chronobox_ops/handoff.py)
+chronobox-ops handoff run|validate|regrade|summary ...   (hand-off mode: see chronobox_ops/handoff/)
 """
 
 from __future__ import annotations

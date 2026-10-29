@@ -78,7 +78,7 @@ def test_handoff_validate_fails_when_a_task_is_invalid(monkeypatch: pytest.Monke
         """Report the first task valid and the second not."""
         return {tasks[0]: True, tasks[1]: False}
 
-    monkeypatch.setattr(handoff, "validate", one_invalid)
+    monkeypatch.setattr(handoff.cli, "validate", one_invalid)
     with pytest.raises(SystemExit) as stopped:
         asyncio.run(handoff.main(["validate", "a", "b", "--out", str(tmp_path)]))
     assert stopped.value.code == 1
