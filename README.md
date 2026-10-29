@@ -130,6 +130,12 @@ See [docs/AUTHORING.md](docs/AUTHORING.md). A task is accepted when `chronobox-o
 passes. Tasks written by people other than the benchmark's authors are the most valuable
 contribution: see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Citing
+
+If you use the benchmark, please cite it with the metadata in [CITATION.cff](CITATION.cff)
+(GitHub's "Cite this repository" button gives BibTeX). [CHANGELOG.md](CHANGELOG.md) lists what
+changed between versions.
+
 ## License
 
 Apache-2.0, see [LICENSE](LICENSE).

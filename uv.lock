@@ -124,15 +124,15 @@ wheels = [
 
 [[package]]
 name = "chronobox"
-version = "0.1.0"
-source = { git = "https://github.com/Geawher/chronobox.git?branch=main#0c73cac838a10e199df54644fe8202570a3e0fea" }
+version = "0.2.0"
+source = { git = "https://github.com/Geawher/chronobox.git?branch=main#4edac7762cbc6ed65f098f4683a9bdee1dd6a194" }
 dependencies = [
     { name = "mcp" },
 ]
 
 [[package]]
 name = "chronobox-ops"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "chronobox" },
