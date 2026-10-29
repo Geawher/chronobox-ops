@@ -16,8 +16,9 @@ go further.
 
 ```
 src/chronobox_ops/  scenario.py · tasks/ (37 tasks by theme) · scoring.py · validate.py · cli.py
-                    handoff.py (hand-off mode) · harness/ (machine: probes, secrets, damage · setups
-                    · agents · scheduler · runner) · report/ (results, Markdown, HTML, validation)
+                    handoff/ (hand-off mode: runs · staging · agent · production · grid · summary
+                    · cli) · harness/ (machine: probes, secrets, damage · setups · agents · scheduler
+                    · runner) · report/ (results, Markdown, HTML, validation)
 agent/              sandbox image for full-access setups
 docs/               these pages, AUTHORING.md (how to write a task)
 results/            the published runs, every table, and the scripts that rebuild them
