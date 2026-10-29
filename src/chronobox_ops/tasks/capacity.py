@@ -675,6 +675,7 @@ STOCK_SETTLE_S = 200.0
 
 
 def tasks() -> list[Scenario]:
+    """The capacity task: ``oom-cgroup-tuning``."""
     return [
         Scenario(
             name="oom-cgroup-tuning",

@@ -373,6 +373,7 @@ NOTES_CORRUPT = 'psql -q -v ON_ERROR_STOP=1 -d notes -U notes -h /run/postgresql
 
 
 def tasks() -> list[Scenario]:
+    """The upgrade and migration tasks."""
     return [
         Scenario(
             name="lib-upgrade",

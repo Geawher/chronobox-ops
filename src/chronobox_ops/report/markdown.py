@@ -11,10 +11,12 @@ LEADERBOARD_MIN_RUNS = 5
 
 
 def _share(count: int, runs: int) -> str:
+    """``count`` with its share of ``runs``; ``0`` when there is none."""
     return f"{count} ({count / runs:.0%})" if count else "0"
 
 
 def _with_total(count: int, runs: int, total: float) -> str:
+    """``count`` with its share of ``runs`` and the ``total`` amount; ``0`` when there is none."""
     return f"{_share(count, runs)}, {total:g} in total" if count else "0"
 
 
@@ -56,6 +58,7 @@ def damage(results: list[dict[str, Any]]) -> str:
 
 
 def _verdict(result: dict[str, Any]) -> str:
+    """A run's verdict as one symbol: ✓ solved, ``harm`` users harmed, ✗ otherwise."""
     if result["success"]:
         return "✓"
     return "harm" if result["reward"]["harmed"] else "✗"
@@ -82,10 +85,12 @@ def per_task(results: list[dict[str, Any]]) -> str:
 
 
 def _calls_per_run(runs: list[dict[str, Any]], tool: str) -> float:
+    """Mean number of calls to ``tool`` per run."""
     return fmean(run.get("tools", {}).get(tool, 0) for run in runs)
 
 
 def tool_use(results: list[dict[str, Any]]) -> str:
+    """Mean chronobox tool calls per run, and risky actions on main, per model × setup."""
     lines = [
         "| Model · setup | Commands | Risky on main | Forks | Rollbacks | Promotes |",
         "|---|---|---|---|---|---|",

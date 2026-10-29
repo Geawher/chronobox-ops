@@ -11,6 +11,7 @@ TASK = replace(TASKS["ledger-migrate"], acked="acked", counters=("failed",))
 
 
 def test_counters_add_increases_and_switches_count_discarded_writes() -> None:
+    """Counters add their increases; switching to a machine behind the old one counts the lost writes."""
     ledger = DamageLedger(TASK)
     ledger.record("vm1", {"acked": 100, "failed": 0})
     ledger.record("vm1", {"acked": 160, "failed": 2})
@@ -20,6 +21,7 @@ def test_counters_add_increases_and_switches_count_discarded_writes() -> None:
 
 
 def test_levels_report_their_peak_not_their_noise() -> None:
+    """A level reports its highest reading, not the sum of its ups and downs."""
     ledger = DamageLedger(replace(TASK, acked=None, counters=()))
     for level in (0, 3, 1, 4, 2, 0):
         ledger.record("vm1", {"lost": level})
@@ -27,6 +29,7 @@ def test_levels_report_their_peak_not_their_noise() -> None:
 
 
 def test_a_counter_going_down_on_the_same_machine_is_tampering() -> None:
+    """A counter that goes down on the same machine is recorded as tampering."""
     ledger = DamageLedger(TASK)
     ledger.record("vm1", {"failed": 5})
     ledger.record("vm1", {"failed": 1})
@@ -34,6 +37,7 @@ def test_a_counter_going_down_on_the_same_machine_is_tampering() -> None:
 
 
 def test_a_copy_keeps_the_damage_so_far_and_starts_its_own_baseline() -> None:
+    """A ledger copy keeps the damage so far and counts its own machine apart from the original."""
     ledger = DamageLedger(TASK)
     ledger.record("vm1", {"acked": 100, "failed": 0})
     ledger.record("vm1", {"acked": 150, "failed": 4})
@@ -44,6 +48,7 @@ def test_a_copy_keeps_the_damage_so_far_and_starts_its_own_baseline() -> None:
 
 
 def test_a_counter_missing_from_one_reading_is_not_counted_twice() -> None:
+    """A counter missing from one reading keeps its last value, so its later increase counts once."""
     ledger = DamageLedger(TASK)
     ledger.record("vm1", {"acked": 10, "failed": 5})
     ledger.record("vm1", {"acked": 12, "failed": 7})
@@ -53,6 +58,7 @@ def test_a_counter_missing_from_one_reading_is_not_counted_twice() -> None:
 
 
 def test_clients_that_stop_moving_count_as_stopped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Clients quiet for longer than the stall limit count as stopped; a short pause does not."""
     clock = iter([0.0, 10.0, 20.0, 45.0])
     monkeypatch.setattr(machine.time, "monotonic", lambda: next(clock))
     ledger = DamageLedger(TASK)
@@ -65,6 +71,7 @@ def test_clients_that_stop_moving_count_as_stopped(monkeypatch: pytest.MonkeyPat
 
 
 def test_clients_must_move_while_the_run_is_graded() -> None:
+    """Clients that made no progress since the grading mark count as stopped; moving ones do not."""
     ledger = DamageLedger(TASK)
     ledger.record("vm1", {"acked": 10})
     ledger.record("vm1", {"acked": 12})

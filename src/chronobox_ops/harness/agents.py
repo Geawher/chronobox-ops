@@ -32,7 +32,8 @@ from chronobox_ops.harness.setups import AgentKind, Setup
 
 MCP_TOOL_TIMEOUT_MS = "1800000"
 AGENT_IMAGE = "chronobox-ops-agent:latest"
-DOCKER_HOST_IP = "172.17.0.1"
+# Where the sandbox container reaches the host's MCP front end: Docker's default bridge gateway.
+DOCKER_HOST_IP = os.environ.get("CHRONOBOX_OPS_DOCKER_HOST", "172.17.0.1")
 CONTAINER_MEMORY = "2g"
 FRONT_END_WAIT_TRIES = 100
 TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"
@@ -64,6 +65,7 @@ class AgentLaunch:
 
 
 def base_claude_args(prompt: str, options: AgentOptions) -> list[str]:
+    """Claude Code arguments shared by every setup: headless, no user settings, stream-json, budget cap."""
     return [
         "-p", prompt, "--setting-sources", "", "--permission-mode", "dontAsk",
         "--model", options.model, "--no-session-persistence",
@@ -98,6 +100,11 @@ async def prepare(
 async def _prepare_full(
     args: list[str], front_end: list[str], home: Path, env: dict[str, str], options: AgentOptions
 ) -> AgentLaunch:
+    """Launch for a full-access setup: Claude Code in a Docker container, chronobox over HTTP MCP.
+
+    Starts the MCP front end on the Docker host address before returning; the launch's cleanup
+    removes the container and stops the front end.
+    """
     port, path_secret = _free_port(DOCKER_HOST_IP), secrets.token_hex(16)
     server = await asyncio.create_subprocess_exec(
         sys.executable, *front_end, "--http", f"{DOCKER_HOST_IP}:{port}", "--http-token", path_secret,
@@ -126,6 +133,7 @@ async def _prepare_full(
     ]  # fmt: skip
 
     async def remove_container() -> None:
+        """Force-remove the agent's container."""
         stop = await asyncio.create_subprocess_exec(
             "sg", "docker", "-c", f"docker rm -f {container}",
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
@@ -133,6 +141,7 @@ async def _prepare_full(
         await stop.wait()
 
     async def stop_front_end() -> None:
+        """Kill the MCP front end if it is still running."""
         if server.returncode is None:
             server.kill()
             await server.wait()
@@ -150,12 +159,18 @@ def front_end_args(setup: Setup, machine_socket: Path, handoff: bool = False) ->
 
 
 def _free_port(host: str) -> int:
+    """A TCP port on ``host`` that is free right now."""
     with socket.socket() as probe:
         probe.bind((host, 0))
         return probe.getsockname()[1]
 
 
 async def _wait_for_port(host: str, port: int) -> None:
+    """Wait until something listens on ``host:port``.
+
+    Raises:
+        RuntimeError: Nothing listened after ``FRONT_END_WAIT_TRIES`` tries.
+    """
     for _ in range(FRONT_END_WAIT_TRIES):
         try:
             _, writer = await asyncio.open_connection(host, port)

@@ -899,6 +899,7 @@ rc=$?; [ -n "$C" ] && kill -CONT $C; exit $rc""",
 
 
 def tasks() -> list[Scenario]:
+    """The upgrade tasks whose hazard only shows by trying."""
     return [
         Scenario(
             name="native-ext-upgrade",

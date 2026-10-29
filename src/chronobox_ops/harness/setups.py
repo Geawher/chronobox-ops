@@ -59,6 +59,7 @@ class Setup:
     profile: Profile
 
     def prompt(self, task_prompt: str) -> str:
+        """The task prompt followed by the context for this setup's kind of agent."""
         return task_prompt + CONTEXT[self.kind]
 
 

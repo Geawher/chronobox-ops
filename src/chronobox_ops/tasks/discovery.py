@@ -147,6 +147,7 @@ LEDGER_DRIFT = (
 
 
 def tasks() -> list[Scenario]:
+    """The tasks whose trap is only discoverable by trying."""
     return [
         Scenario(
             name="ledger-migrate",

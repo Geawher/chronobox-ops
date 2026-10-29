@@ -1305,6 +1305,7 @@ SESSIOND_FLAGS = (
 
 
 def tasks() -> list[Scenario]:
+    """The performance tasks on live in-house services."""
     return [
         Scenario(
             name="perf-regression-bisect",

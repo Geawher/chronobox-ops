@@ -40,11 +40,13 @@ def _resolve_names(requested: list[str], known: dict[str, object], kind: str) ->
 
 
 def cmd_list(args: argparse.Namespace) -> None:
+    """Print every task with its family."""
     for task in TASKS.values():
         print(f"{task.name:34} {task.family}")
 
 
 def cmd_validate(args: argparse.Namespace) -> None:
+    """Validate the tasks, print how many are valid and exit 1 if any fails."""
     names = _resolve_names(args.tasks or [ALL], TASKS, "tasks")
     problems = asyncio.run(
         validate_all(
@@ -66,6 +68,7 @@ def cmd_validate(args: argparse.Namespace) -> None:
 
 
 def cmd_run(args: argparse.Namespace) -> None:
+    """Run every task × setup × seed with Claude Code."""
     options = RunOptions(
         out=args.out,
         agent_dirs=args.agent_dirs,
@@ -85,7 +88,8 @@ def _published(text: str) -> str:
 
 
 def cmd_report(args: argparse.Namespace) -> None:
-    results = load(args.runs)
+    """Write the requested HTML, Markdown and JSON reports; print the leaderboard if none is asked."""
+    results = [result for result in load(args.runs) if result["scenario"] not in set(args.skip_tasks)]
     if args.html:
         args.html.write_text(_published(html.render(results, args.title)))
     if args.markdown:
@@ -97,17 +101,20 @@ def cmd_report(args: argparse.Namespace) -> None:
 
 
 def cmd_validation_report(args: argparse.Namespace) -> None:
+    """Write the validation report from the attempt log and, optionally, run results."""
     runs = load(args.runs) if args.runs else []
     args.out.write_text(validation.render(validation.read_attempts(args.log), runs))
 
 
 def cmd_handoff(args: argparse.Namespace) -> None:
+    """Hand the remaining arguments to the hand-off runner."""
     from chronobox_ops import handoff  # needs chronobox with script hand-offs
 
     asyncio.run(handoff.main(args.rest))
 
 
 def parser() -> argparse.ArgumentParser:
+    """The command-line parser, one subcommand per ``cmd_*`` handler."""
     root = argparse.ArgumentParser(prog="chronobox-ops", description=__doc__.splitlines()[0])
     commands = root.add_subparsers(required=True)
 
@@ -151,6 +158,8 @@ def parser() -> argparse.ArgumentParser:
     reporting.add_argument("--markdown", type=Path)
     reporting.add_argument("--json", type=Path, help="export the rescored results (reloadable)")
     reporting.add_argument("--title", default="chronobox-ops results")
+    reporting.add_argument("--skip-tasks", nargs="+", default=[], metavar="TASK",
+                           help="leave these tasks out (e.g. the CTF ones, as results/tables.md does)")  # fmt: skip
     reporting.set_defaults(handler=cmd_report)
 
     checking = commands.add_parser("validation-report", help="VALIDATION.md from a validate --log file")
@@ -161,13 +170,19 @@ def parser() -> argparse.ArgumentParser:
 
     handing = commands.add_parser("handoff", help="hand-off mode: scripts made on staging, graded on production",
                                   add_help=False)  # fmt: skip
-    handing.add_argument("rest", nargs=argparse.REMAINDER)
+    # Everything after `handoff` (--help too) is the hand-off command line, parsed by handoff.main.
     handing.set_defaults(handler=cmd_handoff)
     return root
 
 
 def main() -> None:
-    args = parser().parse_args()
+    """Parse the command line and run the chosen subcommand."""
+    root = parser()
+    args, rest = root.parse_known_args()
+    if args.handler is cmd_handoff:
+        args.rest = rest
+    elif rest:
+        root.error(f"unrecognized arguments: {' '.join(rest)}")
     args.handler(args)
 
 

@@ -997,6 +997,7 @@ KV_CORRUPT = (
 
 
 def tasks() -> list[Scenario]:
+    """The release, dependency and repository tasks."""
     return [
         Scenario(
             name="git-secret-purge",

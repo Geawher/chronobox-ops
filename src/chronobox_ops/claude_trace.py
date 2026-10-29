@@ -28,6 +28,7 @@ class PartType(StrEnum):
 
 
 def events(path: Path) -> Iterator[dict[str, Any]]:
+    """The JSON events of a trace, one per line; unreadable lines are skipped."""
     for line in path.read_text(errors="replace").splitlines():
         try:
             yield json.loads(line)
@@ -73,10 +74,12 @@ def transcript(path: Path) -> str:
 
 
 def _is_tool_result(part: object) -> bool:
+    """Whether a message part is a tool result."""
     return isinstance(part, dict) and part.get("type") == PartType.TOOL_RESULT
 
 
 def _assistant_line(part: dict[str, Any]) -> str:
+    """A transcript line for the agent's text or tool call; empty for any other part."""
     if part.get("type") == PartType.TEXT and part["text"].strip():
         return "· " + part["text"].strip()[:TEXT_CHARS]
     if part.get("type") == PartType.TOOL_USE:
@@ -85,6 +88,7 @@ def _assistant_line(part: dict[str, Any]) -> str:
 
 
 def _tool_result_line(part: dict[str, Any]) -> str:
+    """A transcript line for a tool result: its text (the ``result`` field if JSON), shortened and indented."""
     content = part.get("content")
     if isinstance(content, list):
         content = "".join(piece.get("text", "") for piece in content)

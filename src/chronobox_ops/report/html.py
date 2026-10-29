@@ -50,6 +50,7 @@ pre { white-space: pre-wrap; font-size: 12px; background: var(--surface-2); padd
 
 
 def render(results: list[dict[str, Any]], title: str) -> str:
+    """The whole report as one HTML page titled ``title``."""
     parts = [
         f"<!doctype html><html lang='en'><head><meta charset='utf-8'>"
         f"<meta name='viewport' content='width=device-width, initial-scale=1'>"
@@ -70,6 +71,7 @@ def render(results: list[dict[str, Any]], title: str) -> str:
 
 
 def _leaderboard(results: list[dict[str, Any]]) -> str:
+    """Leaderboard table: per model × setup, success, harmed users, check passed, cost and time."""
     rows = [
         f"<tr><td>{html.escape(model)}</td><td>{html.escape(SETUP_LABELS[setup])}</td>"
         f"<td class='num'>{cell.runs}</td><td class='num'>{cell.successes / cell.runs:.0%}</td>"
@@ -85,7 +87,10 @@ def _leaderboard(results: list[dict[str, Any]]) -> str:
 
 
 def _damage(results: list[dict[str, Any]]) -> str:
+    """Damage table: per model × setup, the runs affected by each kind of harm."""
+
     def share(count: int, runs: int) -> str:
+        """``count`` with its share of ``runs``; ``0`` when there is none."""
         return f"{count} ({count / runs:.0%})" if count else "0"
 
     rows = []
@@ -108,6 +113,7 @@ def _damage(results: list[dict[str, Any]]) -> str:
 
 
 def _success_chart(results: list[dict[str, Any]]) -> str:
+    """Inline SVG bar chart of the success rate of each setup."""
     cells = [(setup, Cell.of(select(results, setup=setup))) for setup in setups_in(results)]
     cells = [(setup, cell) for setup, cell in cells if cell is not None]
     height = CHART_ROW * len(cells) + 24
@@ -133,12 +139,14 @@ def _success_chart(results: list[dict[str, Any]]) -> str:
 
 
 def _run_order(result: dict[str, Any]) -> tuple[str, str, int, int]:
+    """Sort key for runs: task, model, setup in report order, seed."""
     setup = result["condition"]
     position = SETUP_ORDER.index(setup) if setup in SETUP_ORDER else len(SETUP_ORDER)
     return result["scenario"], result["model"], position, result["seed"]
 
 
 def _status(result: dict[str, Any]) -> str:
+    """The run's verdict as coloured HTML, naming the harm that failed it."""
     if result["success"]:
         return "<span class='ok'>solved</span>"
     reward = result["reward"]
@@ -149,6 +157,7 @@ def _status(result: dict[str, Any]) -> str:
 
 
 def _run_details(result: dict[str, Any]) -> str:
+    """A collapsible block with the run's verdict, main fields and agent transcript."""
     status = _status(result)
     run = f"{html.escape(result['scenario'])} · {html.escape(result['model'])} · {html.escape(result['condition'])}"
     title = f"{run} · seed {result['seed']} — {status}"
