@@ -32,7 +32,8 @@ from chronobox_ops.harness.setups import AgentKind, Setup
 
 MCP_TOOL_TIMEOUT_MS = "1800000"
 AGENT_IMAGE = "chronobox-ops-agent:latest"
-DOCKER_HOST_IP = "172.17.0.1"
+# Where the sandbox container reaches the host's MCP front end: Docker's default bridge gateway.
+DOCKER_HOST_IP = os.environ.get("CHRONOBOX_OPS_DOCKER_HOST", "172.17.0.1")
 CONTAINER_MEMORY = "2g"
 FRONT_END_WAIT_TRIES = 100
 TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"
