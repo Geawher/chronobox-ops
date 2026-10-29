@@ -16,15 +16,27 @@ checks (see [Corrections](#corrections-since-the-first-results)).
 | Limits per run | 30 min of agent time, $3 |
 | Cost | $491 at API prices, 112 agent-hours |
 
-Files: [`tables.md`](tables.md) (leaderboard, damage, per task, tool use; 34 tasks),
-[`analysis.md`](analysis.md) (chronobox effect with confidence intervals; CTF table),
-[`report.html`](report.html), [`tables-all-37-tasks.md`](tables-all-37-tasks.md), and
-[`results.json`](results.json) (every run's scores, without transcripts:
-`chronobox-ops report results/results.json --markdown FILE` rebuilds
-`tables-all-37-tasks.md`, and `tables.md` from the same runs without the CTF tasks).
-Six-seed follow-up: [`six-seeds.md`](six-seeds.md), rebuilt by
-[`six_seeds.py`](six_seeds.py) from `results.json` and
-[`results-seeds.json`](results-seeds.json) (the 306 runs of seeds 3–5).
+Every file here is rebuilt from the published runs, and `tests/test_published_results.py`
+checks that it still is (reports rescore each run with the current tasks and scoring rules, so a
+change that would move a published number fails the tests):
+
+| File | What | Rebuilt by |
+|---|---|---|
+| [`results.json`](results.json) | Every run's scores and damage counts, without transcripts | (the runs) |
+| [`tables.md`](tables.md) | Leaderboard, damage, per task, tool use (34 tasks) | `chronobox-ops report results/results.json --skip-tasks ctf-one-time-token ctf-chain ctf-vault --markdown FILE` |
+| [`tables-all-37-tasks.md`](tables-all-37-tasks.md) | The same with the CTF tasks | `chronobox-ops report results/results.json --markdown FILE` |
+| [`report.html`](report.html) | The 34-task report as a page | the `tables.md` command with `--html FILE --title "chronobox-ops results: 34 tasks (CTF tasks apart)"` |
+| [`analysis.md`](analysis.md) | chronobox's effect with confidence intervals; the CTF table | `python3 results/analysis.py` |
+| [`six-seeds.md`](six-seeds.md) | The six-seed follow-up | `python3 results/six_seeds.py`, also from [`results-seeds.json`](results-seeds.json) (the 306 runs of seeds 3–5) |
+| [`handoff-results.json`](handoff-results.json) | The 90 hand-off runs below, without transcripts | (the runs) |
+| Hand-off tables below | Success, harm, cost and time per mode | `python3 results/handoff_tables.py` |
+
+The commits these runs used are tagged, so they stay reachable: chronobox-ops
+[`leaderboard-2026-10-10`](https://github.com/Geawher/chronobox-ops/tree/leaderboard-2026-10-10) (`48512be`),
+[`leaderboard-ctf-vault-rerun`](https://github.com/Geawher/chronobox-ops/tree/leaderboard-ctf-vault-rerun) (`d3b23a5`),
+[`leaderboard-fixes-2026-10-12`](https://github.com/Geawher/chronobox-ops/tree/leaderboard-fixes-2026-10-12) (`1547103`),
+[`handoff-2026-10-19`](https://github.com/Geawher/chronobox-ops/tree/handoff-2026-10-19) (`793f08d`), and chronobox
+[`ops-leaderboard-2026-10-10`](https://github.com/Geawher/chronobox/tree/ops-leaderboard-2026-10-10) (`a9e9e9f`).
 
 ## Leaderboard (34 tasks)
 
@@ -140,8 +152,8 @@ and seeds.
 
 | Model | Cost per run: live alone / live chronobox / hand-off | Median agent time | Timeouts (30 min) |
 |---|---|---|---|
-| Sonnet 5.5 | $0.15 / $0.19 / $0.22 | 1.7 / 2.4 / 2.4 min | 0 / 1 / 1 |
-| Opus 4.8 | $1.64 / $1.89 / $2.12+ | 9.6 / 12.0 / 16.9 min | 1 / 1 / 7 |
+| Sonnet 5.5 | $0.15 / $0.19+ / $0.22+ | 1.7 / 2.4 / 2.4 min | 0 / 1 / 1 |
+| Opus 4.8 | $1.64+ / $1.89+ / $2.12+ | 9.6 / 12.0 / 16.9 min | 1 / 1 / 7 |
 | Opus 5.5 | $0.42 / $0.44 / $1.12 | 5.6 / 5.8 / 5.2 min | 0 / 0 / 0 |
 
 Per task, successes out of 3 (alone live / chronobox live / hand-off on drift):
@@ -163,7 +175,8 @@ Per task, successes out of 3 (alone live / chronobox live / hand-off on drift):
   The replay catches scripts that are not safe to run twice or to kill halfway, before production.
 - **Opus 4.8 does not gain.** 7 of its hand-offs ran out of the 30 minutes, 5 of them before ever
   calling `verify_script`, still rehearsing by hand on forks (up to 5 on vacuum-full-bloat);
-  those runs record no cost, so its cost per hand-off is a lower bound. At a $4 budget, 6 of its
+  those runs record no cost, so its cost per hand-off is a lower bound (a "+" marks every cost
+  that leaves out such runs). At a $4 budget, 6 of its
   first 15 hand-offs stopped on the budget, so its grid ran at $10.
 - **What is not comparable.** The hand-offs ran on 2026-10-19/20 with Claude Code 2.1.292/2.1.304
   and chronobox's hand-off v4; the live runs on 2026-10-10/13 with Claude Code 2.1.287 and the

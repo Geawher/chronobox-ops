@@ -89,7 +89,7 @@ def _published(text: str) -> str:
 
 def cmd_report(args: argparse.Namespace) -> None:
     """Write the requested HTML, Markdown and JSON reports; print the leaderboard if none is asked."""
-    results = load(args.runs)
+    results = [result for result in load(args.runs) if result["scenario"] not in set(args.skip_tasks)]
     if args.html:
         args.html.write_text(_published(html.render(results, args.title)))
     if args.markdown:
@@ -158,6 +158,8 @@ def parser() -> argparse.ArgumentParser:
     reporting.add_argument("--markdown", type=Path)
     reporting.add_argument("--json", type=Path, help="export the rescored results (reloadable)")
     reporting.add_argument("--title", default="chronobox-ops results")
+    reporting.add_argument("--skip-tasks", nargs="+", default=[], metavar="TASK",
+                           help="leave these tasks out (e.g. the CTF ones, as results/tables.md does)")  # fmt: skip
     reporting.set_defaults(handler=cmd_report)
 
     checking = commands.add_parser("validation-report", help="VALIDATION.md from a validate --log file")
@@ -168,14 +170,19 @@ def parser() -> argparse.ArgumentParser:
 
     handing = commands.add_parser("handoff", help="hand-off mode: scripts made on staging, graded on production",
                                   add_help=False)  # fmt: skip
-    handing.add_argument("rest", nargs=argparse.REMAINDER)
+    # Everything after `handoff` (--help too) is the hand-off command line, parsed by handoff.main.
     handing.set_defaults(handler=cmd_handoff)
     return root
 
 
 def main() -> None:
     """Parse the command line and run the chosen subcommand."""
-    args = parser().parse_args()
+    root = parser()
+    args, rest = root.parse_known_args()
+    if args.handler is cmd_handoff:
+        args.rest = rest
+    elif rest:
+        root.error(f"unrecognized arguments: {' '.join(rest)}")
     args.handler(args)
 
 

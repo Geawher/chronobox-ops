@@ -632,8 +632,9 @@ def _read(path: Path) -> str:
 def parser() -> argparse.ArgumentParser:
     """The ``chronobox-ops handoff`` command line."""
     root = argparse.ArgumentParser(prog="chronobox-ops handoff", description=__doc__.splitlines()[0])
-    commands = root.add_subparsers(dest="command", required=True)
-    serving = commands.add_parser("serve", help="(internal) serve a staging machine")
+    # `serve` is the harness's own staging server: left out of the listed commands.
+    commands = root.add_subparsers(dest="command", required=True, metavar="{run,regrade,validate,summary}")
+    serving = commands.add_parser("serve")
     serving.add_argument("--task", required=True)
     serving.add_argument("--profile", type=Profile, required=True)
     serving.add_argument("--review", default="", help="the reviewer command of verify_script")
@@ -648,7 +649,9 @@ def parser() -> argparse.ArgumentParser:
     running.add_argument("--model", default="claude-sonnet-5-5")
     running.add_argument("--max-usd", type=float, default=MAX_USD, help="the agent's budget per run")
     running.add_argument("--out", type=Path, required=True)
-    running.add_argument("--resume", action="store_true", help="skip runs that finished without a harness error")
+    running.add_argument("--force", action="store_true", help="rerun runs that already finished")
+    # Finished runs are skipped by default, as in `chronobox-ops run`; kept for older command lines.
+    running.add_argument("--resume", action="store_true", help=argparse.SUPPRESS)
     regrading = commands.add_parser("regrade", help="grade saved hand-offs again")
     regrading.add_argument("--out", type=Path, required=True)
     regrading.add_argument("names", nargs="*", help="run folders (default: all in --out)")
@@ -676,7 +679,11 @@ async def main(argv: list[str] | None = None) -> None:
     productions = tuple(args.productions)
     if args.command == "validate":
         valid = await validate(args.tasks, args.out, productions, args.jobs)
-        print(f"{sum(valid.values())}/{len(valid)} tasks valid")
+        failing = sorted(task for task, ok in valid.items() if not ok)
+        listed = f"; failing: {', '.join(failing)}" if failing else ""
+        print(f"{len(valid) - len(failing)}/{len(valid)} tasks valid{listed}")
+        if failing:
+            sys.exit(1)
         return
     if args.command == "regrade":
         names = args.names or sorted(path.parent.name for path in args.out.glob("*/result.json"))
@@ -685,7 +692,7 @@ async def main(argv: list[str] | None = None) -> None:
     options = Options(args.out, args.model, args.jobs, productions, max_usd=args.max_usd)
     seeds = range(args.first_seed, args.first_seed + args.seeds)
     runs = [Run(task, setup, seed) for seed in seeds for task in args.tasks for setup in args.setups]
-    if args.resume:
+    if not args.force:
         runs = [run for run in runs if not _finished(args.out / run.name)]
     slots, heavy = asyncio.Semaphore(args.jobs), asyncio.Semaphore(HEAVY_JOBS)
     await asyncio.gather(*(one(run, options, slots, heavy) for run in runs))
